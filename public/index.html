@@ -1,0 +1,54 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <meta name="theme-color" content="#17211e" />
+    <title>Framehouse | Image workspace</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com" />
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+    <link href="https://fonts.googleapis.com/css2?family=DM+Sans:wght@400;500;600;700&family=Space+Grotesk:wght@500;600;700&display=swap" rel="stylesheet" />
+    <link rel="stylesheet" href="/styles.css" />
+    <link rel="stylesheet" href="/theme.css" />
+  </head>
+  <body>
+    <div id="toast" class="toast" role="status"></div>
+
+    <section id="authView" class="auth-shell">
+      <div class="auth-art">
+        <div class="art-grid"></div>
+        <div class="art-caption"><span class="eyebrow">FRAMEHOUSE / 01</span><h1>Make room<br />for better images.</h1><p>A quiet workspace for the images you want to keep moving.</p></div>
+        <div class="art-orbit orbit-one"></div><div class="art-orbit orbit-two"></div>
+      </div>
+      <div class="auth-panel">
+        <div class="brand-mark"><span>F</span> framehouse</div>
+        <div class="auth-copy"><span class="eyebrow">YOUR PRIVATE STUDIO</span><h2 id="authTitle">Welcome back.</h2><p id="authSubtitle">Sign in to your image workspace.</p></div>
+        <form id="authForm" class="auth-form">
+          <label class="field"><span>Username</span><input id="authUsername" required minlength="3" autocomplete="username" placeholder="your name" /></label>
+          <label class="field"><span>Password</span><input id="authPassword" required minlength="6" type="password" autocomplete="current-password" placeholder="six characters minimum" /></label>
+          <button id="authSubmit" class="button button-dark button-wide" type="submit">Sign in <span>↗</span></button>
+        </form>
+        <button id="authToggle" class="text-button" type="button">Need an account? <strong>Create one</strong></button>
+        <p id="authError" class="form-error"></p>
+      </div>
+    </section>
+
+    <main id="appView" class="app-shell hidden">
+      <aside class="sidebar">
+        <div class="brand-mark"><span>F</span> framehouse</div>
+        <nav class="side-nav"><button class="nav-item active" id="libraryNav"><span class="nav-icon">▦</span> Library</button><button class="nav-item" id="favoritesNav"><span class="nav-icon">♡</span> Favorites</button><button class="nav-item" id="newUploadNav"><span class="nav-icon">＋</span> New upload</button></nav>
+        <div class="sidebar-note"><span class="eyebrow">STUDIO NOTE</span><p>Small edits. Clearer stories.</p></div>
+        <button id="logoutButton" class="logout-button">Log out <span>↗</span></button>
+      </aside>
+      <section class="workspace">
+        <header class="topbar"><div><span class="eyebrow">IMAGE LIBRARY</span><h1>Good to see you, <span id="userName">creator</span>.</h1></div><div class="top-actions"><button id="refreshButton" class="icon-button" title="Refresh library">↻</button><button id="openUploadButton" class="button button-coral">Upload image <span>＋</span></button></div></header>
+        <section class="stats-row"><div class="stat-card"><span class="stat-label">Library</span><strong id="imageCount">0</strong><span class="stat-detail">images stored</span></div><div class="stat-card"><span class="stat-label">Latest format</span><strong id="latestFormat">—</strong><span class="stat-detail">from your recent upload</span></div><div class="stat-card stat-accent"><span class="stat-label">Workspace</span><strong>Private</strong><span class="stat-detail">owner-only access</span></div></section>
+        <section id="uploadSection" class="upload-zone"><div class="upload-copy"><span class="eyebrow">ADD TO LIBRARY</span><h2>Drop a frame<br /><em>into the room.</em></h2><p>Upload an original image, then shape a new version without touching the source.</p><button id="chooseFileButton" class="button button-dark">Choose image <span>↗</span></button><input id="fileInput" type="file" accept="image/*" hidden /></div><div class="upload-visual"><div class="visual-frame"><div class="visual-sun"></div><div class="visual-mountain mountain-back"></div><div class="visual-mountain mountain-front"></div><div class="visual-line"></div></div><span class="visual-label">ORIGINAL / 01</span></div></section>
+        <section class="library-section"><div class="section-heading"><div><span class="eyebrow">YOUR COLLECTION</span><h2 id="collectionTitle">Recent frames <span id="resultLabel">(0)</span></h2></div><div class="pagination"><button id="prevPage" class="page-button" title="Previous page">←</button><span id="pageLabel">1 / 1</span><button id="nextPage" class="page-button" title="Next page">→</button></div></div><div id="gallery" class="gallery"></div><div id="emptyState" class="empty-state hidden"><div class="empty-shape">◌</div><h3>Your library is waiting.</h3><p>Upload your first image to start shaping the collection.</p></div></section>
+      </section>
+    </main>
+
+    <div id="transformModal" class="modal-backdrop hidden"><section class="modal" role="dialog" aria-modal="true" aria-labelledby="transformTitle"><button id="closeModal" class="modal-close" title="Close">×</button><div class="modal-heading"><span class="eyebrow">CREATE A NEW VERSION</span><h2 id="transformTitle">Shape this frame.</h2><p>The original stays untouched. Your edited version becomes a new S3 asset.</p></div><form id="transformForm" class="transform-form"><div class="control-group"><label class="field"><span>Width</span><input id="transformWidth" type="number" min="1" placeholder="original" /></label><label class="field"><span>Height</span><input id="transformHeight" type="number" min="1" placeholder="original" /></label></div><div class="control-group"><label class="field"><span>Rotate</span><select id="transformRotate"><option value="0">No rotation</option><option value="90">90° right</option><option value="180">180°</option><option value="270">270° right</option></select></label><label class="field"><span>Output</span><select id="transformFormat"><option value="">Keep original</option><option value="jpeg">JPEG</option><option value="png">PNG</option><option value="webp">WebP</option></select></label></div><div class="toggle-grid"><label class="toggle"><input id="filterGrayscale" type="checkbox" /><span class="toggle-ui"></span>Grayscale</label><label class="toggle"><input id="filterMirror" type="checkbox" /><span class="toggle-ui"></span>Mirror</label><label class="toggle"><input id="filterFlip" type="checkbox" /><span class="toggle-ui"></span>Flip</label><label class="toggle"><input id="filterSepia" type="checkbox" /><span class="toggle-ui"></span>Sepia</label></div><label class="field quality-field"><span>Compression quality <b id="qualityValue">80</b></span><input id="transformQuality" type="range" min="1" max="100" value="80" /></label><button class="button button-dark button-wide" type="submit">Create transformed version <span>↗</span></button></form></section></div>
+    <script src="/app.js"></script>
+  </body>
+</html>

@@ -1,0 +1,140 @@
+:root {
+  --ink: #2b1e2d;
+  --ink-soft: #4d3851;
+  --paper: #fbf6fa;
+  --card: #fffaff;
+  --line: #eadde8;
+  --muted: #8e7c8d;
+  --coral: #e46b9f;
+  --lime: #d8a7ef;
+  --shadow: 0 22px 60px rgba(74, 37, 76, 0.12);
+}
+
+body {
+  background: var(--paper);
+}
+
+.auth-art {
+  background: linear-gradient(135deg, #2b1e2d, #51334f);
+}
+
+.art-grid {
+  background-image: linear-gradient(rgba(255, 224, 245, 0.3) 1px, transparent 1px), linear-gradient(90deg, rgba(255, 224, 245, 0.3) 1px, transparent 1px);
+}
+
+.art-orbit {
+  border-color: rgba(216, 167, 239, 0.46);
+}
+
+.orbit-two {
+  border-color: rgba(228, 107, 159, 0.55);
+}
+
+.upload-zone {
+  background: #ead9ea;
+}
+
+.visual-frame {
+  background: #d8b3d7;
+}
+
+.visual-sun {
+  background: #f4a5c3;
+}
+
+.mountain-back {
+  background: #aa79b0;
+}
+
+.mountain-front {
+  background: #654675;
+}
+
+.visual-line {
+  background: #fff4fb;
+}
+
+.stat-card.stat-accent {
+  background: #e7c9f1;
+  border-color: #e7c9f1;
+}
+
+.stat-accent .stat-label,
+.stat-accent .stat-detail {
+  color: #755184;
+}
+
+.sidebar .brand-mark span {
+  background: var(--lime);
+}
+
+.toast.error {
+  background: #b54874;
+}
+
+.card-button {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  text-decoration: none;
+}
+
+.favorite-button {
+  position: absolute;
+  z-index: 2;
+  top: 12px;
+  right: 12px;
+  width: 36px;
+  height: 36px;
+  border: 0;
+  border-radius: 50%;
+  background: rgba(255, 250, 255, 0.9);
+  box-shadow: 0 5px 16px rgba(43, 30, 45, 0.16);
+  color: var(--muted);
+  font-size: 20px;
+  line-height: 1;
+}
+
+.image-visual {
+  position: relative;
+}
+
+.favorite-button:hover,
+.favorite-button.favorite-active {
+  border-color: var(--coral);
+  color: var(--coral);
+  background: #fff0f7;
+}
+
+.rotation-range {
+  width: 100%;
+  accent-color: var(--coral);
+  padding: 0 !important;
+  border: 0 !important;
+  background: transparent !important;
+}
+
+.rotation-value,
+.quality-field b {
+  margin-left: auto;
+  color: var(--coral);
+}
+
+.rotation-presets {
+  display: flex;
+  gap: 6px;
+  margin-top: 8px;
+}
+
+.rotation-presets button {
+  border: 1px solid var(--line);
+  background: var(--card);
+  color: var(--ink);
+  padding: 6px 9px;
+  font-size: 11px;
+}
+
+.rotation-presets button:hover {
+  border-color: var(--coral);
+  color: var(--coral);
+}
