@@ -1,0 +1,320 @@
+'use client';
+
+import { ChangeEvent, FormEvent, useEffect, useRef, useState } from 'react';
+import Image from 'next/image';
+
+type ImageMetadata = {
+  format?: string;
+  size?: number;
+  width?: number;
+  height?: number;
+};
+
+type LibraryImage = {
+  id: string;
+  url: string;
+  transformedUrls?: string[];
+  isFavorite?: boolean;
+  metadata?: ImageMetadata;
+};
+
+type LibraryResponse = {
+  data?: LibraryImage[];
+  meta?: { total?: number; totalPages?: number };
+};
+
+const API_URL = (process.env.NEXT_PUBLIC_API_URL || 'http://localhost:3030').replace(/\/$/, '');
+
+async function apiRequest<T>(path: string, token: string, options: RequestInit = {}): Promise<T> {
+  const headers = new Headers(options.headers);
+  if (token) headers.set('Authorization', `Bearer ${token}`);
+  const response = await fetch(`${API_URL}${path}`, { ...options, headers });
+  const data = await response.json().catch(() => ({}));
+  if (!response.ok) {
+    const message = Array.isArray(data.message)
+      ? data.message.join(', ')
+      : data.message || 'Something went wrong. Try again.';
+    throw new Error(message);
+  }
+  return data as T;
+}
+
+function formatBytes(bytes?: number) {
+  if (!bytes) return '—';
+  if (bytes < 1024) return `${bytes} B`;
+  if (bytes < 1024 * 1024) return `${Math.round(bytes / 1024)} KB`;
+  return `${(bytes / (1024 * 1024)).toFixed(1)} MB`;
+}
+
+export default function Home() {
+  const [token, setToken] = useState('');
+  const [username, setUsername] = useState('');
+  const [ready, setReady] = useState(false);
+  const [registerMode, setRegisterMode] = useState(false);
+  const [authError, setAuthError] = useState('');
+  const [authBusy, setAuthBusy] = useState(false);
+  const [activeTab, setActiveTab] = useState<'library' | 'favorites'>('library');
+  const [page, setPage] = useState(1);
+  const [totalPages, setTotalPages] = useState(1);
+  const [totalImages, setTotalImages] = useState(0);
+  const [images, setImages] = useState<LibraryImage[]>([]);
+  const [loading, setLoading] = useState(false);
+  const [refreshKey, setRefreshKey] = useState(0);
+  const [originalPreviewIds, setOriginalPreviewIds] = useState<Set<string>>(new Set());
+  const [toast, setToast] = useState<{ message: string; error: boolean } | null>(null);
+  const [selectedImage, setSelectedImage] = useState<LibraryImage | null>(null);
+  const [quality, setQuality] = useState(80);
+  const [rotation, setRotation] = useState(0);
+  const [transformBusy, setTransformBusy] = useState(false);
+  const [uploadBusy, setUploadBusy] = useState(false);
+  const [transformFields, setTransformFields] = useState({
+    width: '',
+    height: '',
+    format: '',
+    grayscale: false,
+    mirror: false,
+    flip: false,
+    sepia: false,
+  });
+  const fileInput = useRef<HTMLInputElement>(null);
+  const toastTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  useEffect(() => {
+    setToken(localStorage.getItem('framehouse_token') || '');
+    setUsername(localStorage.getItem('framehouse_user') || '');
+    setReady(true);
+  }, []);
+
+  useEffect(() => {
+    if (!ready || !token) return;
+    let cancelled = false;
+    const load = async () => {
+      setLoading(true);
+      try {
+        const endpoint = activeTab === 'favorites' ? '/images/favorites' : '/images';
+        const result = await apiRequest<LibraryResponse>(`${endpoint}?page=${page}&limit=8`, token);
+        if (cancelled) return;
+        const nextImages = result.data || [];
+        setImages(nextImages);
+        setTotalImages(result.meta?.total ?? nextImages.length);
+        setTotalPages(result.meta?.totalPages || 1);
+      } catch (error) {
+        if (!cancelled) showToast(error instanceof Error ? error.message : 'Unable to load images.', true);
+      } finally {
+        if (!cancelled) setLoading(false);
+      }
+    };
+    void load();
+    return () => { cancelled = true; };
+  }, [activeTab, page, ready, refreshKey, token]);
+
+  useEffect(() => () => {
+    if (toastTimer.current) clearTimeout(toastTimer.current);
+  }, []);
+
+  function showToast(message: string, error = false) {
+    setToast({ message, error });
+    if (toastTimer.current) clearTimeout(toastTimer.current);
+    toastTimer.current = setTimeout(() => setToast(null), 3500);
+  }
+
+  async function handleAuth(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    const form = new FormData(event.currentTarget);
+    const name = String(form.get('username') || '').trim();
+    const password = String(form.get('password') || '');
+    setAuthBusy(true);
+    setAuthError('');
+    try {
+      if (registerMode) {
+        await apiRequest('/auth/register', '', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ username: name, password }),
+        });
+        setRegisterMode(false);
+        showToast('Workspace created. Sign in to continue.');
+      } else {
+        const result = await apiRequest<{ access_token: string }>('/auth/login', '', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ username: name, password }),
+        });
+        localStorage.setItem('framehouse_token', result.access_token);
+        localStorage.setItem('framehouse_user', name);
+        setUsername(name);
+        setToken(result.access_token);
+      }
+    } catch (error) {
+      setAuthError(error instanceof Error ? error.message : 'Unable to sign in.');
+    } finally {
+      setAuthBusy(false);
+    }
+  }
+
+  async function handleUpload(event: ChangeEvent<HTMLInputElement>) {
+    const file = event.target.files?.[0];
+    if (!file) return;
+    const form = new FormData();
+    form.append('file', file);
+    setUploadBusy(true);
+    try {
+      await apiRequest('/images', token, { method: 'POST', body: form });
+      showToast('Image added to your library.');
+      setActiveTab('library');
+      setPage(1);
+      setRefreshKey((value) => value + 1);
+    } catch (error) {
+      showToast(error instanceof Error ? error.message : 'Unable to upload image.', true);
+    } finally {
+      setUploadBusy(false);
+      event.target.value = '';
+    }
+  }
+
+  async function toggleFavorite(image: LibraryImage) {
+    try {
+      await apiRequest(`/images/${image.id}/favorite`, token, { method: 'PATCH' });
+      showToast('Favorites updated.');
+      setRefreshKey((value) => value + 1);
+    } catch (error) {
+      showToast(error instanceof Error ? error.message : 'Unable to update favorite.', true);
+    }
+  }
+
+  async function deleteImage(image: LibraryImage) {
+    if (!window.confirm('Delete this image and all transformed versions?')) return;
+    try {
+      await apiRequest(`/images/${image.id}`, token, { method: 'DELETE' });
+      showToast('Image removed from the library.');
+      setRefreshKey((value) => value + 1);
+    } catch (error) {
+      showToast(error instanceof Error ? error.message : 'Unable to delete image.', true);
+    }
+  }
+
+  function closeTransform() {
+    setSelectedImage(null);
+    setQuality(80);
+    setRotation(0);
+    setTransformFields({ width: '', height: '', format: '', grayscale: false, mirror: false, flip: false, sepia: false });
+  }
+
+  async function handleTransform(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    if (!selectedImage) return;
+    const body: Record<string, unknown> = {
+      filters: {
+        grayscale: transformFields.grayscale,
+        mirror: transformFields.mirror,
+        flip: transformFields.flip,
+        sepia: transformFields.sepia,
+      },
+      compress: { quality },
+    };
+    const width = Number(transformFields.width);
+    const height = Number(transformFields.height);
+    if (width && height) body.resize = { width, height };
+    if (rotation) body.rotate = rotation;
+    if (transformFields.format) body.format = transformFields.format;
+
+    setTransformBusy(true);
+    try {
+      const result = await apiRequest<{ url?: string }>(`/images/${selectedImage.id}/transform`, token, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(body),
+      });
+      if (result.url) {
+        setImages((current) => current.map((image) => image.id === selectedImage.id
+          ? { ...image, transformedUrls: [...(image.transformedUrls || []), result.url!] }
+          : image));
+      }
+      setOriginalPreviewIds((current) => {
+        const next = new Set(current);
+        next.delete(selectedImage.id);
+        return next;
+      });
+      closeTransform();
+      showToast('New version created.');
+      setRefreshKey((value) => value + 1);
+    } catch (error) {
+      showToast(error instanceof Error ? error.message : 'Unable to transform image.', true);
+    } finally {
+      setTransformBusy(false);
+    }
+  }
+
+  function chooseTab(tab: 'library' | 'favorites') {
+    setActiveTab(tab);
+    setPage(1);
+  }
+
+  function openUpload() {
+    document.getElementById('uploadSection')?.scrollIntoView({ behavior: 'smooth' });
+    fileInput.current?.click();
+  }
+
+  if (!ready) return null;
+
+  return (
+    <>
+      {!token ? (
+        <section className="auth-shell">
+          <div className="auth-art">
+            <div className="art-grid" />
+            <div className="art-caption"><span className="eyebrow">FRAMEHOUSE / 01</span><h1>Make room<br />for better images.</h1><p>A quiet workspace for the images you want to keep moving.</p></div>
+            <div className="art-orbit orbit-one" /><div className="art-orbit orbit-two" />
+          </div>
+          <div className="auth-panel">
+            <div className="brand-mark"><span>F</span> framehouse</div>
+            <div className="auth-copy"><span className="eyebrow">YOUR PRIVATE STUDIO</span><h2>{registerMode ? 'Make it yours.' : 'Welcome back.'}</h2><p>{registerMode ? 'Create a private image workspace.' : 'Sign in to your image workspace.'}</p></div>
+            <form className="auth-form" onSubmit={handleAuth}>
+              <label className="field"><span>Username</span><input name="username" required minLength={3} autoComplete="username" placeholder="your name" /></label>
+              <label className="field"><span>Password</span><input name="password" required minLength={6} type="password" autoComplete={registerMode ? 'new-password' : 'current-password'} placeholder="six characters minimum" /></label>
+              <button className="button button-dark button-wide" type="submit" disabled={authBusy}>{registerMode ? 'Create workspace' : 'Sign in'} <span>↗</span></button>
+            </form>
+            <button className="text-button" type="button" onClick={() => { setRegisterMode((value) => !value); setAuthError(''); }}>{registerMode ? <>Already have a workspace? <strong>Sign in</strong></> : <>Need an account? <strong>Create one</strong></>}</button>
+            <p className="form-error" role="alert">{authError}</p>
+          </div>
+        </section>
+      ) : (
+        <main className="app-shell">
+          <aside className="sidebar">
+            <div className="brand-mark"><span>F</span> framehouse</div>
+            <nav className="side-nav" aria-label="Image workspace">
+              <button className={`nav-item${activeTab === 'library' ? ' active' : ''}`} onClick={() => chooseTab('library')}><span className="nav-icon">▦</span> Library</button>
+              <button className={`nav-item${activeTab === 'favorites' ? ' active' : ''}`} onClick={() => chooseTab('favorites')}><span className="nav-icon">♡</span> Favorites</button>
+              <button className="nav-item" onClick={openUpload}><span className="nav-icon">＋</span> New upload</button>
+            </nav>
+            <div className="sidebar-note"><span className="eyebrow">STUDIO NOTE</span><p>Small edits. Clearer stories.</p></div>
+            <button className="logout-button" onClick={() => { localStorage.removeItem('framehouse_token'); localStorage.removeItem('framehouse_user'); setToken(''); setImages([]); }}>Log out <span>↗</span></button>
+          </aside>
+          <section className="workspace">
+            <header className="topbar"><div><span className="eyebrow">IMAGE LIBRARY</span><h1>Good to see you, <span>{username || 'creator'}</span>.</h1></div><div className="top-actions"><button className="icon-button" title="Refresh library" aria-label="Refresh library" onClick={() => setRefreshKey((value) => value + 1)}>↻</button><button className="button button-coral" onClick={openUpload} disabled={uploadBusy}>{uploadBusy ? 'Uploading…' : 'Upload image'} <span>＋</span></button></div></header>
+            <section className="stats-row"><div className="stat-card"><span className="stat-label">Library</span><strong>{totalImages}</strong><span className="stat-detail">images stored</span></div><div className="stat-card"><span className="stat-label">Latest format</span><strong>{images[0]?.metadata?.format?.toUpperCase() || '—'}</strong><span className="stat-detail">from your recent upload</span></div><div className="stat-card stat-accent"><span className="stat-label">Workspace</span><strong>Private</strong><span className="stat-detail">owner-only access</span></div></section>
+            <section id="uploadSection" className="upload-zone"><div className="upload-copy"><span className="eyebrow">ADD TO LIBRARY</span><h2>Drop a frame<br /><em>into the room.</em></h2><p>Upload an original image, then shape a new version without touching the source.</p><button className="button button-dark" onClick={() => fileInput.current?.click()} disabled={uploadBusy}>{uploadBusy ? 'Uploading…' : 'Choose image'} <span>↗</span></button><input ref={fileInput} type="file" accept="image/*" hidden onChange={handleUpload} /></div><div className="upload-visual"><div className="visual-frame"><div className="visual-sun" /><div className="visual-mountain mountain-back" /><div className="visual-mountain mountain-front" /><div className="visual-line" /></div><span className="visual-label">ORIGINAL / 01</span></div></section>
+            <section className="library-section"><div className="section-heading"><div><span className="eyebrow">YOUR COLLECTION</span><h2>{activeTab === 'favorites' ? 'Favorite frames ' : 'Recent frames '}<span>({totalImages})</span></h2></div><div className="pagination"><button className="page-button" title="Previous page" disabled={page <= 1} onClick={() => setPage((value) => Math.max(1, value - 1))}>←</button><span>{page} / {totalPages}</span><button className="page-button" title="Next page" disabled={page >= totalPages} onClick={() => setPage((value) => Math.min(totalPages, value + 1))}>→</button></div></div>
+              <div className={`gallery${loading ? ' is-loading' : ''}`}>
+                {images.map((image) => {
+                  const transformedUrls = image.transformedUrls || [];
+                  const showingOriginal = originalPreviewIds.has(image.id);
+                  const previewUrl = showingOriginal ? image.url : transformedUrls.at(-1) || image.url;
+                  const versionLabel = showingOriginal || !transformedUrls.length ? 'original' : 'latest version';
+                  return <article className="image-card" key={image.id}>
+                    <div className="image-visual"><a href={previewUrl} target="_blank" rel="noreferrer"><Image className="image-preview" src={previewUrl} alt="Uploaded frame" width={800} height={640} unoptimized /></a><button className={`favorite-button${image.isFavorite ? ' favorite-active' : ''}`} onClick={() => void toggleFavorite(image)} title="Toggle favorite" aria-label="Toggle favorite">{image.isFavorite ? '★' : '☆'}</button></div>
+                    <div className="image-meta"><h3>{image.metadata?.format?.toUpperCase() || 'IMAGE'} {versionLabel}</h3><p>{image.metadata?.width || '—'} × {image.metadata?.height || '—'} px · {formatBytes(image.metadata?.size)}</p><div className="card-actions"><button className="card-button" onClick={() => setSelectedImage(image)}>Transform</button>{transformedUrls.length > 0 && <button className="card-button" onClick={() => setOriginalPreviewIds((current) => { const next = new Set(current); if (showingOriginal) next.delete(image.id); else next.add(image.id); return next; })}>{showingOriginal ? 'Show latest' : 'Revert to original'}</button>}<button className="card-button delete" onClick={() => void deleteImage(image)}>Delete</button></div></div>
+                  </article>;
+                })}
+              </div>
+              {images.length === 0 && !loading && <div className="empty-state"><div className="empty-shape">◌</div><h3>{activeTab === 'favorites' ? 'No favorites yet.' : 'Your library is waiting.'}</h3><p>{activeTab === 'favorites' ? 'Star an image to keep it close.' : 'Upload your first image to start shaping the collection.'}</p></div>}
+            </section>
+          </section>
+        </main>
+      )}
+
+      {selectedImage && <div className="modal-backdrop" onMouseDown={(event) => { if (event.target === event.currentTarget) closeTransform(); }}><section className="modal" role="dialog" aria-modal="true" aria-labelledby="transformTitle"><button className="modal-close" title="Close" aria-label="Close" onClick={closeTransform}>×</button><div className="modal-heading"><span className="eyebrow">CREATE A NEW VERSION</span><h2 id="transformTitle">Shape this frame.</h2><p>The original stays untouched. Your edited version becomes a new S3 asset.</p></div><form className="transform-form" onSubmit={handleTransform}><div className="control-group"><label className="field"><span>Width</span><input type="number" min="1" placeholder="original" value={transformFields.width} onChange={(event) => setTransformFields((value) => ({ ...value, width: event.target.value }))} /></label><label className="field"><span>Height</span><input type="number" min="1" placeholder="original" value={transformFields.height} onChange={(event) => setTransformFields((value) => ({ ...value, height: event.target.value }))} /></label></div><div className="control-group"><label className="field"><span>Rotate <b className="rotation-value">{rotation}°</b></span><input className="rotation-range" type="range" min="0" max="360" step="1" value={rotation} onChange={(event) => setRotation(Number(event.target.value))} /><span className="rotation-presets">{[0, 90, 180, 270].map((angle) => <button key={angle} type="button" onClick={() => setRotation(angle)}>{angle}°</button>)}</span></label><label className="field"><span>Output</span><select value={transformFields.format} onChange={(event) => setTransformFields((value) => ({ ...value, format: event.target.value }))}><option value="">Keep original</option><option value="jpeg">JPEG</option><option value="png">PNG</option><option value="webp">WebP</option></select></label></div><div className="toggle-grid">{(['grayscale', 'mirror', 'flip', 'sepia'] as const).map((filter) => <label className="toggle" key={filter}><input type="checkbox" checked={transformFields[filter]} onChange={(event) => setTransformFields((value) => ({ ...value, [filter]: event.target.checked }))} /><span className="toggle-ui" />{filter[0].toUpperCase() + filter.slice(1)}</label>)}</div><label className="field quality-field"><span>Compression quality <b>{quality}</b></span><input type="range" min="1" max="100" value={quality} onChange={(event) => setQuality(Number(event.target.value))} /></label><button className="button button-dark button-wide" type="submit" disabled={transformBusy}>{transformBusy ? 'Creating version…' : 'Create transformed version'} <span>↗</span></button></form></section></div>}
+      {toast && <div className={`toast visible${toast.error ? ' error' : ''}`} role="status">{toast.message}</div>}
+    </>
+  );
+}

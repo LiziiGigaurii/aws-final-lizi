@@ -20,6 +20,13 @@ import type { Express, Request as ExpressRequest } from 'express';
 import { AuthGuard } from '../auth/guards/auth.guard';
 import { TransformImageDto } from './dto/transform-image.dto';
 import { ImagesService } from './images.service';
+import {
+  ApiBearerAuth,
+  ApiBody,
+  ApiConsumes,
+  ApiOperation,
+  ApiTags,
+} from '@nestjs/swagger';
 
 type AuthenticatedRequest = ExpressRequest & {
   userId?: string;
@@ -27,12 +34,23 @@ type AuthenticatedRequest = ExpressRequest & {
 };
 
 @Controller('images')
+@ApiTags('Images')
+@ApiBearerAuth()
 export class ImagesController {
   constructor(private readonly imagesService: ImagesService) {}
 
   @UseGuards(AuthGuard)
   @UseInterceptors(FileInterceptor('file'))
   @Post()
+  @ApiOperation({ summary: 'Upload an image to the authenticated user library' })
+  @ApiConsumes('multipart/form-data')
+  @ApiBody({
+    schema: {
+      type: 'object',
+      required: ['file'],
+      properties: { file: { type: 'string', format: 'binary' } },
+    },
+  })
   upload(
     @UploadedFile() file: Express.Multer.File,
     @Request() req: AuthenticatedRequest,
@@ -52,6 +70,7 @@ export class ImagesController {
   @UseGuards(ThrottlerGuard)
   @Throttle({ default: { limit: 10, ttl: 60_000 } })
   @Post(':id/transform')
+  @ApiOperation({ summary: 'Create a transformed version of an image' })
   transform(
     @Param('id') id: string,
     @Request() req: AuthenticatedRequest,
@@ -66,6 +85,7 @@ export class ImagesController {
 
   @UseGuards(AuthGuard)
   @Get()
+  @ApiOperation({ summary: 'List the authenticated user images' })
   findAll(
     @Request() req: AuthenticatedRequest,
     @Query('page') page = '1',
@@ -80,6 +100,7 @@ export class ImagesController {
 
   @UseGuards(AuthGuard)
   @Get('favorites')
+  @ApiOperation({ summary: 'List the authenticated user favorite images' })
   findFavorites(
     @Request() req: AuthenticatedRequest,
     @Query('page') page = '1',
@@ -94,6 +115,7 @@ export class ImagesController {
 
   @UseGuards(AuthGuard)
   @Get('protected')
+  @ApiOperation({ summary: 'Check the current authenticated user' })
   getProtected(@Request() req: any) {
     return {
       message: 'შენ ავტორიზებული ხარ',
@@ -104,6 +126,7 @@ export class ImagesController {
 
   @UseGuards(AuthGuard)
   @Patch(':id/favorite')
+  @ApiOperation({ summary: 'Toggle an image favorite state' })
   toggleFavorite(
     @Param('id') id: string,
     @Request() req: AuthenticatedRequest,
@@ -117,6 +140,7 @@ export class ImagesController {
 
   @UseGuards(AuthGuard)
   @Get(':id')
+  @ApiOperation({ summary: 'Get one image owned by the current user' })
   findOne(@Param('id') id: string, @Request() req: AuthenticatedRequest) {
     if (!req.userId) {
       throw new BadRequestException('მომხმარებელი ვერ განისაზღვრა');
@@ -127,6 +151,7 @@ export class ImagesController {
 
   @UseGuards(AuthGuard)
   @Delete(':id')
+  @ApiOperation({ summary: 'Delete an image and its transformed files' })
   remove(@Param('id') id: string, @Request() req: AuthenticatedRequest) {
     if (!req.userId) {
       throw new BadRequestException('მომხმარებელი ვერ განისაზღვრა');
