@@ -23,7 +23,7 @@ type LibraryResponse = {
   meta?: { total?: number; totalPages?: number };
 };
 
-const API_URL = (process.env.NEXT_PUBLIC_API_URL || 'http://localhost:3030').replace(/\/$/, '');
+const API_URL = '';
 
 async function apiRequest<T>(path: string, token: string, options: RequestInit = {}): Promise<T> {
   const headers = new Headers(options.headers);

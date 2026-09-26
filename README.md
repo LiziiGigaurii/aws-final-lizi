@@ -1,51 +1,44 @@
 # Framehouse
 
-პროექტი შედგება ორი დამოუკიდებელი Node.js აპისგან: NestJS API (`server/`) და Next.js + TypeScript UI (`client/`). თითოეულს საკუთარი `package.json`, lockfile და `node_modules/` აქვს. Root-ში package ან dependencies საჭირო არ არის.
+The app has a Next.js + TypeScript frontend in `client/` and a NestJS API in `server/`. Next exports static assets to `client/out`; Nest serves those assets and the API from one origin and one port.
 
-## ლოკალურად გაშვება
+## Local run
 
-ორ ტერმინალში გაუშვით:
-
-```powershell
-cd server
-npm install
-npm run start:dev
-```
+Build the frontend once:
 
 ```powershell
 cd client
 npm install
-npm run dev
+npm run build
 ```
 
-UI: `http://localhost:3000`  
-API: `http://localhost:3030`  
-Swagger: `http://localhost:3030/api/docs`
+Then run the backend (it also serves the frontend):
 
-`server/.env` ფაილში შეავსეთ MongoDB და AWS S3-ის პარამეტრები. `client/.env.example` დააკოპირეთ `client/.env.local` ფაილად და საჭიროებისამებრ შეცვალეთ `NEXT_PUBLIC_API_URL`.
+```powershell
+cd ..\server
+npm install
+npm run start:dev
+```
 
-## Render Dashboard-იდან გაშვება
+Open the complete app at `http://localhost:5050`. Swagger is at `http://localhost:5050/api/docs`.
 
-`render.yaml` საჭირო არ არის. Render Dashboard-ში Git repository-დან შექმენით ორი ცალკე **Web Service**.
+Configure MongoDB and AWS S3 in `server/.env`. The server listens on `PORT` if set, otherwise `5050`.
 
-**API service**
+## Deploy on Render
 
-- Root Directory: `server`
+Create **one Web Service** from the Git repository. Leave Root Directory empty (repository root).
+
 - Runtime: Node
-- Build Command: `npm ci && npm run build`
-- Start Command: `npm run start:prod`
-- Environment: `NODE_ENV=production`, `CLIENT_URL=https://<client-service>.onrender.com`, `MONGO_URI`, `JWT_SECRET`, `AWS_REGION`, `AWS_ACCESS_KEY_ID`, `AWS_SECRET_ACCESS_KEY`, `AWS_BUCKET_NAME`
+- Build Command: `cd client && npm ci && npm run build && cd ../server && npm ci && npm run build`
+- Start Command: `cd server && npm run start:prod`
 
-**Client service**
+Set these environment variables in Render:
 
-- Root Directory: `client`
-- Runtime: Node
-- Build Command: `npm ci && npm run build`
-- Start Command: `npm run start`
-- Environment: `NEXT_PUBLIC_API_URL=https://<api-service>.onrender.com`
+- `MONGO_URI`
+- `JWT_SECRET`
+- `AWS_REGION`
+- `AWS_ACCESS_KEY_ID`
+- `AWS_SECRET_ACCESS_KEY`
+- `AWS_BUCKET_NAME`
 
-`NEXT_PUBLIC_API_URL` build-ის დაწყებამდე დააყენეთ. თუ service URL შეიცვლება, განაახლეთ API-ის `CLIENT_URL` და client-ის `NEXT_PUBLIC_API_URL`, შემდეგ თავიდან deploy გააკეთეთ. Render `PORT` environment variable-ს თავად ადგენს.
-
-## Build-ის შემოწმება
-
-შედით შესაბამის `server/` ან `client/` საქაღალდეში და გაუშვით `npm run build`.
+Render sets `PORT` automatically. The UI, API, and Swagger will use the same Render service URL. No `NEXT_PUBLIC_API_URL`, CORS origin, or `render.yaml` is needed.

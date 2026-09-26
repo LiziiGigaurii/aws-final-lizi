@@ -4,11 +4,13 @@ import { Logger } from 'nestjs-pino';
 import { ValidationPipe } from '@nestjs/common';
 import { HttpExceptionFilter } from './common/filters/http-exception.filter';
 import { DocumentBuilder, SwaggerModule } from '@nestjs/swagger';
+import express from 'express';
+import { join } from 'path';
 
 async function bootstrap() {
   const app = await NestFactory.create(AppModule, { bufferLogs: true });
   app.useLogger(app.get(Logger));
-  app.enableCors({ origin: process.env.CLIENT_URL || 'http://localhost:3000' });
+  app.use(express.static(join(process.cwd(), '../client/out')));
   app.useGlobalPipes(
     new ValidationPipe({
       whitelist: true,
@@ -27,7 +29,7 @@ async function bootstrap() {
   const swaggerDocument = SwaggerModule.createDocument(app, swaggerConfig);
   SwaggerModule.setup('api/docs', app, swaggerDocument);
 
-  const port = process.env.PORT ?? 3030;
+  const port = process.env.PORT ?? 5050;
   await app.listen(port);
   app.get(Logger).log(`Application is running on port ${port}`);
 }

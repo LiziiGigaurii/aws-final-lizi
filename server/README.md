@@ -152,11 +152,11 @@ $ npm install
 
 ## Frontend
 
-The Next.js + TypeScript frontend lives in the sibling `client/` directory and runs separately on `http://localhost:3000`. Set `NEXT_PUBLIC_API_URL` in `client/.env.local` to this API's origin (default `http://localhost:3030`). See the root `README.md` for workspace commands.
+The Next.js + TypeScript frontend lives in the sibling `client/` directory. Build it with `cd ../client && npm ci && npm run build`; Nest serves the exported `client/out` assets alongside the API from the same port. Run Nest from this `server/` directory and open `http://localhost:5050` (or the configured `PORT`).
 
 ## Swagger
 
-Start the API and open `http://localhost:3030/api/docs` for the interactive OpenAPI documentation. Image endpoints use Bearer JWT authentication; use the Swagger UI **Authorize** button after signing in.
+Start the API and open `http://localhost:5050/api/docs` for the interactive OpenAPI documentation (or use the configured `PORT`). Image endpoints use Bearer JWT authentication; use the Swagger UI **Authorize** button after signing in.
 
 ## Compile and run the project
 
