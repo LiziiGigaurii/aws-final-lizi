@@ -150,6 +150,31 @@ export class ImagesService {
 				image.tint({ r: 112, g: 66, b: 20 });
 			}
 
+			if (
+				!transformations.filters?.grayscale &&
+				!transformations.filters?.sepia
+			) {
+				switch (transformations.filters?.color) {
+					case 'warm':
+						image.modulate({ brightness: 1.03, saturation: 1.15, hue: 8 });
+						break;
+					case 'cool':
+						image.modulate({ brightness: 1.02, saturation: 1.08, hue: -8 });
+						break;
+					case 'vintage':
+						image.modulate({ brightness: 0.96, saturation: 0.72, hue: -5 });
+						image.tint({ r: 222, g: 190, b: 150 });
+						break;
+					case 'vivid':
+						image.modulate({ brightness: 1.02, saturation: 1.45 });
+						break;
+					case 'fade':
+						image.modulate({ brightness: 1.08, saturation: 0.72 });
+						image.linear(0.92, 10);
+						break;
+				}
+			}
+
 			const outputFormat =
 				transformations.format ??
 				(await sharp(inputBuffer).metadata()).format ??

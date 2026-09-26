@@ -46,6 +46,12 @@ export class CropDto {
 }
 
 export class FiltersDto {
+  @ApiPropertyOptional({ enum: ['warm', 'cool', 'vintage', 'vivid', 'fade'] })
+  @IsOptional()
+  @IsString()
+  @IsIn(['warm', 'cool', 'vintage', 'vivid', 'fade'])
+  color?: string;
+
   @ApiPropertyOptional()
   @IsOptional()
   @IsBoolean()

@@ -72,11 +72,14 @@ Example request body for Postman:
     "grayscale": true,
     "flip": false,
     "mirror": true,
-    "sepia": false
+    "sepia": false,
+    "color": "warm"
   },
   "compress": { "quality": 80 }
 }
 ```
+
+`filters.color` supports `warm`, `cool`, `vintage`, `vivid`, or `fade`. Choose one color look per transformation; grayscale and sepia take precedence over color looks.
 
 The transformed file is uploaded to S3 with a new key and appended to the image document's `transformedKeys` array. The response contains the transformed file's signed URL and metadata.
 
