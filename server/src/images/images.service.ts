@@ -13,6 +13,7 @@ import 'multer';
 import type { Express } from 'express';
 import { StorageService } from '../storage/storage.service';
 import type { TransformImageDto } from './dto/transform-image.dto';
+import { Album, AlbumDocument } from './schemas/albums.schema';
 import { Image, ImageDocument } from './schemas/images.schema';
 
 @Injectable()
@@ -21,6 +22,7 @@ export class ImagesService {
 
 	constructor(
 		@InjectModel(Image.name) private readonly imageModel: Model<ImageDocument>,
+		@InjectModel(Album.name) private readonly albumModel: Model<AlbumDocument>,
 		private readonly storageService: StorageService,
 	) {}
 
@@ -282,6 +284,10 @@ export class ImagesService {
 			),
 		);
 		await this.imageModel.deleteOne({ _id: image._id });
+		await this.albumModel.updateMany(
+			{ owner: new Types.ObjectId(ownerId) },
+			{ $pull: { imageIds: image._id } },
+		);
 
 		return {
 			message: 'სურათი წარმატებით წაიშალა',

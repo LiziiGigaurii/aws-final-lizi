@@ -23,6 +23,12 @@ type LibraryResponse = {
   meta?: { total?: number; totalPages?: number };
 };
 
+type Album = {
+  id: string;
+  name: string;
+  imageCount: number;
+};
+
 const API_URL = "";
 
 async function apiRequest<T>(
@@ -57,13 +63,20 @@ export default function Home() {
   const [registerMode, setRegisterMode] = useState(false);
   const [authError, setAuthError] = useState("");
   const [authBusy, setAuthBusy] = useState(false);
-  const [activeTab, setActiveTab] = useState<"library" | "favorites">(
+  const [activeTab, setActiveTab] = useState<"library" | "favorites" | "albums">(
     "library",
   );
   const [page, setPage] = useState(1);
   const [totalPages, setTotalPages] = useState(1);
   const [totalImages, setTotalImages] = useState(0);
   const [images, setImages] = useState<LibraryImage[]>([]);
+  const [albums, setAlbums] = useState<Album[]>([]);
+  const [openAlbumId, setOpenAlbumId] = useState("");
+  const [selectedImageIds, setSelectedImageIds] = useState<Set<string>>(
+    new Set(),
+  );
+  const [albumTargetId, setAlbumTargetId] = useState("");
+  const [albumBusy, setAlbumBusy] = useState(false);
   const [loading, setLoading] = useState(false);
   const [refreshKey, setRefreshKey] = useState(0);
   const [originalPreviewIds, setOriginalPreviewIds] = useState<Set<string>>(
@@ -100,20 +113,32 @@ export default function Home() {
   useEffect(() => {
     if (!ready || !token) return;
     let cancelled = false;
+    if (activeTab === "albums" && !openAlbumId) {
+      setImages([]);
+      setTotalImages(0);
+      setTotalPages(1);
+      setLoading(false);
+      return () => {
+        cancelled = true;
+      };
+    }
     const load = async () => {
       setLoading(true);
       try {
-        const endpoint =
-          activeTab === "favorites" ? "/images/favorites" : "/images";
-        const result = await apiRequest<LibraryResponse>(
-          `${endpoint}?page=${page}&limit=8`,
-          token,
-        );
+        const isAlbum = activeTab === "albums";
+        const endpoint = isAlbum
+          ? `/albums/${openAlbumId}`
+          : activeTab === "favorites"
+            ? "/images/favorites"
+            : "/images";
+        const result = await apiRequest<
+          LibraryResponse & { images?: LibraryImage[] }
+        >(isAlbum ? endpoint : `${endpoint}?page=${page}&limit=8`, token);
         if (cancelled) return;
-        const nextImages = result.data || [];
+        const nextImages = isAlbum ? result.images || [] : result.data || [];
         setImages(nextImages);
-        setTotalImages(result.meta?.total ?? nextImages.length);
-        setTotalPages(result.meta?.totalPages || 1);
+        setTotalImages(isAlbum ? nextImages.length : result.meta?.total ?? nextImages.length);
+        setTotalPages(isAlbum ? 1 : result.meta?.totalPages || 1);
       } catch (error) {
         if (!cancelled)
           showToast(
@@ -128,7 +153,27 @@ export default function Home() {
     return () => {
       cancelled = true;
     };
-  }, [activeTab, page, ready, refreshKey, token]);
+  }, [activeTab, openAlbumId, page, ready, refreshKey, token]);
+
+  useEffect(() => {
+    if (!ready || !token) return;
+    let cancelled = false;
+    void apiRequest<{ data?: Album[] }>("/albums", token)
+      .then((result) => {
+        if (!cancelled) setAlbums(result.data || []);
+      })
+      .catch((error) => {
+        if (!cancelled) {
+          showToast(
+            error instanceof Error ? error.message : "Unable to load albums.",
+            true,
+          );
+        }
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [ready, refreshKey, token]);
 
   useEffect(
     () => () => {
@@ -226,6 +271,11 @@ export default function Home() {
       return;
     try {
       await apiRequest(`/images/${image.id}`, token, { method: "DELETE" });
+      setSelectedImageIds((current) => {
+        const next = new Set(current);
+        next.delete(image.id);
+        return next;
+      });
       showToast("Image removed from the library.");
       setRefreshKey((value) => value + 1);
     } catch (error) {
@@ -317,7 +367,64 @@ export default function Home() {
 
   function chooseTab(tab: "library" | "favorites") {
     setActiveTab(tab);
+    setOpenAlbumId("");
+    setSelectedImageIds(new Set());
     setPage(1);
+  }
+
+  function chooseAlbums() {
+    setActiveTab("albums");
+    setOpenAlbumId("");
+    setSelectedImageIds(new Set());
+    setPage(1);
+  }
+
+  async function createAlbum() {
+    const name = window.prompt("Album name")?.trim();
+    if (!name) return;
+    setAlbumBusy(true);
+    try {
+      const album = await apiRequest<Album>("/albums", token, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ name }),
+      });
+      setAlbums((current) => [album, ...current]);
+      setAlbumTargetId(album.id);
+      setActiveTab("library");
+      setOpenAlbumId("");
+      setPage(1);
+      showToast("Album created. Select photos to add.");
+    } catch (error) {
+      showToast(
+        error instanceof Error ? error.message : "Unable to create album.",
+        true,
+      );
+    } finally {
+      setAlbumBusy(false);
+    }
+  }
+
+  async function addSelectedToAlbum() {
+    if (!albumTargetId || selectedImageIds.size === 0) return;
+    setAlbumBusy(true);
+    try {
+      await apiRequest(`/albums/${albumTargetId}/images`, token, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ imageIds: [...selectedImageIds] }),
+      });
+      setSelectedImageIds(new Set());
+      showToast("Photos added to album.");
+      setRefreshKey((value) => value + 1);
+    } catch (error) {
+      showToast(
+        error instanceof Error ? error.message : "Unable to add photos.",
+        true,
+      );
+    } finally {
+      setAlbumBusy(false);
+    }
   }
 
   function openUpload() {
@@ -416,7 +523,7 @@ export default function Home() {
           </div>
         </section>
       ) : (
-        <main className="app-shell">
+        <main className={`app-shell${activeTab === "albums" ? " albums-view" : ""}`}>
           <aside className="sidebar">
             <div className="brand-mark">
               <span>F</span> framehouse
@@ -433,6 +540,12 @@ export default function Home() {
                 onClick={() => chooseTab("favorites")}
               >
                 <span className="nav-icon">♡</span> Favorites
+              </button>
+              <button
+                className={`nav-item${activeTab === "albums" ? " active" : ""}`}
+                onClick={chooseAlbums}
+              >
+                <span className="nav-icon">▣</span> Albums
               </button>
               <button className="nav-item" onClick={openUpload}>
                 <span className="nav-icon">＋</span> New upload
@@ -463,6 +576,13 @@ export default function Home() {
                 </h1>
               </div>
               <div className="top-actions">
+                <button
+                  className="button button-dark"
+                  onClick={() => void createAlbum()}
+                  disabled={albumBusy}
+                >
+                  New album <span>＋</span>
+                </button>
                 <button
                   className="icon-button"
                   title="Refresh library"
@@ -539,39 +659,107 @@ export default function Home() {
             <section className="library-section">
               <div className="section-heading">
                 <div>
-                  <span className="eyebrow">YOUR COLLECTION</span>
+                  <span className="eyebrow">
+                    {activeTab === "albums" ? "YOUR ALBUMS" : "YOUR COLLECTION"}
+                  </span>
                   <h2>
-                    {activeTab === "favorites"
-                      ? "Favorite frames "
-                      : "Recent frames "}
-                    <span>({totalImages})</span>
+                    {activeTab === "albums"
+                      ? openAlbumId
+                        ? albums.find((album) => album.id === openAlbumId)?.name || "Album"
+                        : "Your albums"
+                      : activeTab === "favorites"
+                        ? "Favorite frames"
+                        : "Recent frames"}{" "}
+                    <span>
+                      ({activeTab === "albums" && !openAlbumId ? albums.length : totalImages})
+                    </span>
                   </h2>
                 </div>
-                <div className="pagination">
-                  <button
-                    className="page-button"
-                    title="Previous page"
-                    disabled={page <= 1}
-                    onClick={() => setPage((value) => Math.max(1, value - 1))}
-                  >
-                    ←
-                  </button>
-                  <span>
-                    {page} / {totalPages}
-                  </span>
-                  <button
-                    className="page-button"
-                    title="Next page"
-                    disabled={page >= totalPages}
-                    onClick={() =>
-                      setPage((value) => Math.min(totalPages, value + 1))
-                    }
-                  >
-                    →
-                  </button>
+                <div className="section-tools">
+                  {activeTab === "library" && selectedImageIds.size > 0 && (
+                    <div className="selection-tools">
+                      <span>{selectedImageIds.size} selected</span>
+                      <select
+                        aria-label="Choose an album"
+                        value={albumTargetId}
+                        onChange={(event) => setAlbumTargetId(event.target.value)}
+                      >
+                        <option value="">Choose album</option>
+                        {albums.map((album) => (
+                          <option key={album.id} value={album.id}>
+                            {album.name}
+                          </option>
+                        ))}
+                      </select>
+                      <button
+                        className="button button-dark"
+                        onClick={() => void addSelectedToAlbum()}
+                        disabled={!albumTargetId || albumBusy}
+                      >
+                        Add to album
+                      </button>
+                    </div>
+                  )}
+                  {activeTab !== "albums" && (
+                    <div className="pagination">
+                      <button
+                        className="page-button"
+                        title="Previous page"
+                        disabled={page <= 1}
+                        onClick={() => setPage((value) => Math.max(1, value - 1))}
+                      >
+                        ←
+                      </button>
+                      <span>
+                        {page} / {totalPages}
+                      </span>
+                      <button
+                        className="page-button"
+                        title="Next page"
+                        disabled={page >= totalPages}
+                        onClick={() =>
+                          setPage((value) => Math.min(totalPages, value + 1))
+                        }
+                      >
+                        →
+                      </button>
+                    </div>
+                  )}
                 </div>
               </div>
-              <div className={`gallery${loading ? " is-loading" : ""}`}>
+              {activeTab === "albums" && !openAlbumId ? (
+                <div className="album-list">
+                  {albums.map((album) => (
+                    <button
+                      className="album-row"
+                      key={album.id}
+                      onClick={() => setOpenAlbumId(album.id)}
+                    >
+                      <span className="album-mark">▣</span>
+                      <strong>{album.name}</strong>
+                      <span className="album-count">{album.imageCount} photos</span>
+                      <span className="album-arrow">↗</span>
+                    </button>
+                  ))}
+                  {albums.length === 0 && (
+                    <div className="empty-state">
+                      <div className="empty-shape">▣</div>
+                      <h3>No albums yet.</h3>
+                      <p>Create an album, then select photos from your library.</p>
+                    </div>
+                  )}
+                </div>
+              ) : (
+                <>
+                  {activeTab === "albums" && (
+                    <button
+                      className="back-to-albums"
+                      onClick={() => setOpenAlbumId("")}
+                    >
+                      ← All albums
+                    </button>
+                  )}
+                  <div className={`gallery${loading ? " is-loading" : ""}`}>
                 {images.map((image) => {
                   const transformedUrls = image.transformedUrls || [];
                   const showingOriginal = originalPreviewIds.has(image.id);
@@ -585,6 +773,23 @@ export default function Home() {
                   return (
                     <article className="image-card" key={image.id}>
                       <div className="image-visual">
+                        {activeTab === "library" && (
+                          <label className="image-select" title="Select photo">
+                            <input
+                              type="checkbox"
+                              checked={selectedImageIds.has(image.id)}
+                              aria-label="Select photo"
+                              onChange={(event) =>
+                                setSelectedImageIds((current) => {
+                                  const next = new Set(current);
+                                  if (event.target.checked) next.add(image.id);
+                                  else next.delete(image.id);
+                                  return next;
+                                })
+                              }
+                            />
+                          </label>
+                        )}
                         <a href={previewUrl} target="_blank" rel="noreferrer">
                           <Image
                             className="image-preview"
@@ -649,21 +854,27 @@ export default function Home() {
                     </article>
                   );
                 })}
-              </div>
-              {images.length === 0 && !loading && (
+                  </div>
+                  {images.length === 0 && !loading && (
                 <div className="empty-state">
                   <div className="empty-shape">◌</div>
                   <h3>
-                    {activeTab === "favorites"
-                      ? "No favorites yet."
-                      : "Your library is waiting."}
+                    {activeTab === "albums"
+                      ? "This album is empty."
+                      : activeTab === "favorites"
+                        ? "No favorites yet."
+                        : "Your library is waiting."}
                   </h3>
                   <p>
-                    {activeTab === "favorites"
-                      ? "Star an image to keep it close."
-                      : "Upload your first image to start shaping the collection."}
+                    {activeTab === "albums"
+                      ? "Select photos in your library and add them to this album."
+                      : activeTab === "favorites"
+                        ? "Star an image to keep it close."
+                        : "Upload your first image to start shaping the collection."}
                   </p>
                 </div>
+              )}
+                </>
               )}
             </section>
           </section>
