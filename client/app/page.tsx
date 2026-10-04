@@ -17,10 +17,36 @@ type ImageMetadata = {
   height?: number;
 };
 
+type TransformSettings = {
+  resize?: { width: number; height: number };
+  crop?: { width: number; height: number; x: number; y: number };
+  rotate?: number;
+  filters?: {
+    color?: string;
+    grayscale?: boolean;
+    mirror?: boolean;
+    flip?: boolean;
+    sepia?: boolean;
+  };
+  compress?: { quality: number };
+  format?: string;
+};
+
+type TransformHistoryEntry = {
+  id: string;
+  version: number;
+  url: string;
+  createdAt: string | null;
+  sourceVersionId?: string;
+  settings: TransformSettings | null;
+  metadata: ImageMetadata | null;
+};
+
 type LibraryImage = {
   id: string;
   url: string;
   transformedUrls?: string[];
+  transformHistory?: TransformHistoryEntry[];
   isFavorite?: boolean;
   metadata?: ImageMetadata;
 };
@@ -122,6 +148,31 @@ function formatBytes(bytes?: number) {
   return `${(bytes / (1024 * 1024)).toFixed(1)} MB`;
 }
 
+function describeTransformSettings(settings: TransformSettings | null) {
+  if (!settings) return ["Edit details unavailable for this older version."];
+  const changes: string[] = [];
+  if (settings.resize) {
+    changes.push(`Resize to ${settings.resize.width} × ${settings.resize.height} px`);
+  }
+  if (settings.crop) {
+    changes.push(
+      `Crop ${settings.crop.width} × ${settings.crop.height} px at ${settings.crop.x}, ${settings.crop.y}`,
+    );
+  }
+  if (settings.rotate) changes.push(`Rotate ${settings.rotate}°`);
+  if (settings.filters?.color) {
+    changes.push(`${settings.filters.color[0].toUpperCase()}${settings.filters.color.slice(1)} color`);
+  }
+  for (const filter of ["grayscale", "mirror", "flip", "sepia"] as const) {
+    if (settings.filters?.[filter]) {
+      changes.push(filter[0].toUpperCase() + filter.slice(1));
+    }
+  }
+  if (settings.compress) changes.push(`Compression quality ${settings.compress.quality}%`);
+  if (settings.format) changes.push(`Output ${settings.format.toUpperCase()}`);
+  return changes.length ? changes : ["No changes recorded."];
+}
+
 export default function Home() {
   const [token, setToken] = useState("");
   const [username, setUsername] = useState("");
@@ -154,6 +205,9 @@ export default function Home() {
     error: boolean;
   } | null>(null);
   const [selectedImage, setSelectedImage] = useState<LibraryImage | null>(null);
+  const [historyImage, setHistoryImage] = useState<LibraryImage | null>(null);
+  const [activeHistoryVersionId, setActiveHistoryVersionId] = useState("original");
+  const [transformSourceVersionId, setTransformSourceVersionId] = useState("");
   const [quality, setQuality] = useState(80);
   const [compressionPreviewUrl, setCompressionPreviewUrl] = useState("");
   const [compressionPreviewBytes, setCompressionPreviewBytes] = useState(0);
@@ -217,7 +271,11 @@ export default function Home() {
           Authorization: `Bearer ${token}`,
           "Content-Type": "application/json",
         },
-        body: JSON.stringify({ quality, format: outputFormat }),
+        body: JSON.stringify({
+          quality,
+          format: outputFormat,
+          sourceVersionId: transformSourceVersionId || undefined,
+        }),
         signal: controller.signal,
       })
         .then((response) => {
@@ -248,7 +306,14 @@ export default function Home() {
       controller.abort();
       if (previewUrl) URL.revokeObjectURL(previewUrl);
     };
-  }, [quality, selectedImage?.id, selectedImage?.metadata?.format, token, transformFields.format]);
+  }, [
+    quality,
+    selectedImage?.id,
+    selectedImage?.metadata?.format,
+    token,
+    transformFields.format,
+    transformSourceVersionId,
+  ]);
 
   useEffect(() => {
     if (!ready || !token) return;
@@ -436,6 +501,7 @@ export default function Home() {
 
   function closeTransform() {
     setSelectedImage(null);
+    setTransformSourceVersionId("");
     setQuality(80);
     setRotation(0);
     setCropMode(false);
@@ -451,6 +517,34 @@ export default function Home() {
       flip: false,
       sepia: false,
     });
+  }
+
+  function openTransform(image: LibraryImage, sourceVersionId?: string) {
+    setSelectedImage(image);
+    setHistoryImage(null);
+    setTransformSourceVersionId(
+      sourceVersionId ?? image.transformHistory?.at(-1)?.id ?? "",
+    );
+    setQuality(80);
+    setRotation(0);
+    setCropMode(false);
+    setCropSelection(null);
+    setCropGesture(null);
+    setTransformFields({
+      width: "",
+      height: "",
+      format: "",
+      color: "",
+      grayscale: false,
+      mirror: false,
+      flip: false,
+      sepia: false,
+    });
+  }
+
+  function openHistory(image: LibraryImage) {
+    setHistoryImage(image);
+    setActiveHistoryVersionId(image.transformHistory?.at(-1)?.id ?? "original");
   }
 
   function getCropPoint(event: ReactPointerEvent<HTMLElement>) {
@@ -524,6 +618,7 @@ export default function Home() {
         color: transformFields.color || undefined,
       },
       compress: { quality },
+      sourceVersionId: transformSourceVersionId || undefined,
     };
     const width = Number(transformFields.width);
     const height = Number(transformFields.height);
@@ -661,8 +756,14 @@ export default function Home() {
     .join(" ") || "none";
   const hasCustomDimensions =
     Number(transformFields.width) > 0 && Number(transformFields.height) > 0;
-  const sourceWidth = selectedImage?.metadata?.width ?? 0;
-  const sourceHeight = selectedImage?.metadata?.height ?? 0;
+  const transformSourceVersion = selectedImage?.transformHistory?.find(
+    (version) => version.id === transformSourceVersionId,
+  );
+  const transformSourceUrl = transformSourceVersion?.url ?? selectedImage?.url;
+  const transformSourceMetadata =
+    transformSourceVersion?.metadata ?? selectedImage?.metadata;
+  const sourceWidth = transformSourceMetadata?.width ?? 0;
+  const sourceHeight = transformSourceMetadata?.height ?? 0;
   const cropCoordinateWidth = hasCustomDimensions
     ? Number(transformFields.width)
     : sourceWidth;
@@ -722,7 +823,18 @@ export default function Home() {
     : selectedImage?.metadata?.width;
   const previewHeight = hasCustomDimensions
     ? Number(transformFields.height)
-    : selectedImage?.metadata?.height;
+    : transformSourceMetadata?.height;
+  const activeHistoryVersion = historyImage?.transformHistory?.find(
+    (version) => version.id === activeHistoryVersionId,
+  );
+  const activeHistoryUrl =
+    activeHistoryVersionId === "original"
+      ? historyImage?.url
+      : activeHistoryVersion?.url ?? historyImage?.url;
+  const activeHistoryMetadata =
+    activeHistoryVersionId === "original"
+      ? historyImage?.metadata
+      : activeHistoryVersion?.metadata ?? historyImage?.metadata;
 
   if (!ready) return null;
 
@@ -1126,9 +1238,15 @@ export default function Home() {
                         <div className="card-actions">
                           <button
                             className="card-button"
-                            onClick={() => setSelectedImage(image)}
+                            onClick={() => openTransform(image)}
                           >
                             Transform
+                          </button>
+                          <button
+                            className="card-button"
+                            onClick={() => openHistory(image)}
+                          >
+                            History ({(image.transformHistory || []).length + 1})
                           </button>
                           {transformedUrls.length > 0 && (
                             <button
@@ -1249,7 +1367,11 @@ export default function Home() {
                       }
                     >
                       <Image
-                        src={compressionPreviewUrl || selectedImage.url}
+                        src={
+                          compressionPreviewUrl ||
+                          transformSourceUrl ||
+                          selectedImage.url
+                        }
                         alt="Preview of the image being transformed"
                         fill
                         sizes="(max-width: 760px) 90vw, 50vw"
@@ -1522,6 +1644,156 @@ export default function Home() {
                 </button>
               </div>
               </form>
+            </div>
+          </section>
+        </div>
+      )}
+      {historyImage && (
+        <div
+          className="modal-backdrop"
+          onMouseDown={(event) => {
+            if (event.target === event.currentTarget) setHistoryImage(null);
+          }}
+        >
+          <section
+            className="modal history-modal"
+            role="dialog"
+            aria-modal="true"
+            aria-labelledby="historyTitle"
+          >
+            <button
+              className="modal-close"
+              title="Close history"
+              aria-label="Close history"
+              onClick={() => setHistoryImage(null)}
+            >
+              ×
+            </button>
+            <header className="history-header">
+              <div>
+                <span className="eyebrow">PHOTO HISTORY</span>
+                <h2 id="historyTitle">Every version, one frame.</h2>
+                <p>
+                  Original preserved · {(historyImage.transformHistory || []).length} saved edits
+                </p>
+              </div>
+              <button
+                className="button button-coral history-edit-button"
+                onClick={() =>
+                  openTransform(
+                    historyImage,
+                    activeHistoryVersionId === "original"
+                      ? ""
+                      : activeHistoryVersionId,
+                  )
+                }
+              >
+                Transform this version <span>↗</span>
+              </button>
+            </header>
+            <div className="history-layout">
+              <div className="history-main">
+                <div className="history-image-stage">
+                  <Image
+                    src={activeHistoryUrl || historyImage.url}
+                    alt={
+                      activeHistoryVersionId === "original"
+                        ? "Original photo"
+                        : `Transformed version ${activeHistoryVersion?.version || ""}`
+                    }
+                    fill
+                    sizes="(max-width: 760px) 90vw, 65vw"
+                    unoptimized
+                    style={{ objectFit: "contain" }}
+                  />
+                  <span className="history-image-label">
+                    {activeHistoryVersionId === "original"
+                      ? "ORIGINAL"
+                      : `VERSION ${activeHistoryVersion?.version || ""}`}
+                  </span>
+                </div>
+                <div className="history-image-meta">
+                  <span>
+                    {activeHistoryMetadata?.width || "—"} × {activeHistoryMetadata?.height || "—"} px
+                    <small>{formatBytes(activeHistoryMetadata?.size)}</small>
+                  </span>
+                  <a href={activeHistoryUrl || historyImage.url} target="_blank" rel="noreferrer">
+                    Open full size ↗
+                  </a>
+                </div>
+                <section className="history-settings">
+                  <div className="history-section-heading">
+                    <span className="eyebrow">EDIT SETTINGS</span>
+                    {activeHistoryVersion && (
+                      <span>
+                        {activeHistoryVersion.createdAt
+                          ? new Date(activeHistoryVersion.createdAt).toLocaleString()
+                          : "Earlier version"}
+                      </span>
+                    )}
+                  </div>
+                  {activeHistoryVersionId === "original" ? (
+                    <p className="history-original-note">Original upload · no edits applied.</p>
+                  ) : (
+                    <ul className="history-setting-list">
+                      {describeTransformSettings(
+                        activeHistoryVersion?.settings ?? null,
+                      ).map((setting) => (
+                        <li key={setting}>{setting}</li>
+                      ))}
+                    </ul>
+                  )}
+                  {activeHistoryVersion?.sourceVersionId && (
+                    <p className="history-source-note">
+                      Based on version {historyImage.transformHistory?.find(
+                        (version) => version.id === activeHistoryVersion.sourceVersionId,
+                      )?.version || "from history"}
+                    </p>
+                  )}
+                </section>
+              </div>
+              <aside className="history-sidebar" aria-label="Version history">
+                <div className="history-section-heading">
+                  <strong>Versions</strong>
+                  <span>{(historyImage.transformHistory || []).length + 1}</span>
+                </div>
+                <div className="history-version-list">
+                  <button
+                    className={`history-version${activeHistoryVersionId === "original" ? " active" : ""}`}
+                    onClick={() => setActiveHistoryVersionId("original")}
+                  >
+                    <span className="history-version-mark">O</span>
+                    <span className="history-version-copy">
+                      <strong>Original</strong>
+                      <small>Uploaded source</small>
+                    </span>
+                  </button>
+                  {(historyImage.transformHistory || []).map((version) => (
+                    <button
+                      key={version.id}
+                      className={`history-version${activeHistoryVersionId === version.id ? " active" : ""}`}
+                      onClick={() => setActiveHistoryVersionId(version.id)}
+                    >
+                      <span className="history-version-mark">
+                        {String(version.version).padStart(2, "0")}
+                      </span>
+                      <span className="history-version-copy">
+                        <strong>Version {version.version}</strong>
+                        <small>
+                          {version.settings
+                            ? describeTransformSettings(version.settings)[0]
+                            : "Earlier edit · details unavailable"}
+                        </small>
+                      </span>
+                      <span className="history-version-date">
+                        {version.createdAt
+                          ? new Date(version.createdAt).toLocaleDateString()
+                          : "Legacy"}
+                      </span>
+                    </button>
+                  ))}
+                </div>
+              </aside>
             </div>
           </section>
         </div>

@@ -1,8 +1,18 @@
 import { Prop, Schema, SchemaFactory } from '@nestjs/mongoose';
+import { Schema as MongooseSchema } from 'mongoose';
 import { HydratedDocument, Types } from 'mongoose';
 import { User } from '../../users/schemas/user.schema';
 
 export type ImageDocument = HydratedDocument<Image>;
+export type ImageTransformHistory = {
+  id: string;
+  version: number;
+  key: string;
+  createdAt: Date;
+  sourceVersionId?: string;
+  settings: Record<string, unknown>;
+  metadata: { format?: string; size: number; width?: number; height?: number };
+};
 
 @Schema({ timestamps: true })
 export class Image {
@@ -14,6 +24,9 @@ export class Image {
 
   @Prop({ type: [String], default: [] })
   transformedKeys: string[];
+
+  @Prop({ type: [MongooseSchema.Types.Mixed], default: [] })
+  transformHistory: ImageTransformHistory[];
 
   @Prop({ default: false })
   isFavorite: boolean;

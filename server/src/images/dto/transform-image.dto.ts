@@ -6,6 +6,7 @@ import {
   IsOptional,
   IsString,
   Max,
+  MaxLength,
   Min,
   ValidateNested,
 } from 'class-validator';
@@ -116,6 +117,12 @@ export class TransformImageDto {
   @ValidateNested()
   @Type(() => CompressDto)
   compress?: CompressDto;
+
+  @ApiPropertyOptional({ description: 'Create this version from a saved version.' })
+  @IsOptional()
+  @IsString()
+  @MaxLength(80)
+  sourceVersionId?: string;
 }
 
 export class CompressionPreviewDto {
@@ -130,4 +137,10 @@ export class CompressionPreviewDto {
   @IsString()
   @IsIn(['jpeg', 'jpg', 'png', 'webp'])
   format?: string;
+
+  @ApiPropertyOptional({ description: 'Preview compression from a saved version.' })
+  @IsOptional()
+  @IsString()
+  @MaxLength(80)
+  sourceVersionId?: string;
 }

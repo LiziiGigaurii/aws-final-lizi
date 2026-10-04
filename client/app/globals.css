@@ -60,6 +60,37 @@ button:disabled { cursor: not-allowed; opacity: .55; }
 .crop-dimensions { color: var(--coral); font-size: 11px; font-weight: 700; }
 .crop-help { margin-top: 7px; color: var(--muted); font-size: 10px; line-height: 1.5; }
 .transform-actions { position: sticky; bottom: 0; z-index: 4; display: grid; gap: 12px; margin-top: auto; padding: 12px 0 4px; border-top: 1px solid var(--line); background: var(--paper); }
+.history-modal { width: min(1160px, 100%); max-height: calc(100vh - 40px); overflow-y: auto; padding: 34px; }
+.history-header { display: flex; align-items: flex-end; justify-content: space-between; gap: 24px; padding-right: 28px; }
+.history-header h2 { margin: 8px 0 6px; font: 600 28px 'Space Grotesk',sans-serif; color: var(--ink); }
+.history-header p { color: var(--muted); font-size: 12px; }
+.history-edit-button { flex: 0 0 auto; gap: 10px; padding: 11px 14px; font-size: 12px; }
+.history-layout { display: grid; grid-template-columns: minmax(0, 1.35fr) minmax(260px, .65fr); gap: 26px; margin-top: 24px; }
+.history-main, .history-sidebar { min-width: 0; }
+.history-image-stage { position: relative; width: 100%; aspect-ratio: 4 / 3; overflow: hidden; background: #202a26; }
+.history-image-label { position: absolute; left: 12px; bottom: 12px; padding: 6px 8px; background: rgba(24,33,30,.82); color: #fff; font-size: 9px; font-weight: 700; }
+.history-image-meta { display: flex; align-items: center; justify-content: space-between; gap: 12px; padding: 12px 0; border-bottom: 1px solid var(--line); color: var(--ink-soft); font-size: 12px; }
+.history-image-meta small { display: inline-block; margin-left: 9px; color: var(--muted); }
+.history-image-meta a { color: var(--coral); text-decoration: none; font-size: 11px; font-weight: 700; }
+.history-settings { padding-top: 16px; }
+.history-section-heading { display: flex; align-items: center; justify-content: space-between; gap: 10px; margin-bottom: 12px; }
+.history-section-heading > span:last-child { color: var(--muted); font-size: 10px; }
+.history-original-note { color: var(--muted); font-size: 12px; }
+.history-setting-list { display: flex; flex-wrap: wrap; gap: 7px; margin: 0; padding: 0; list-style: none; }
+.history-setting-list li { padding: 7px 9px; border: 1px solid var(--line); background: var(--card); color: var(--ink-soft); font-size: 11px; }
+.history-source-note { margin-top: 12px; color: var(--muted); font-size: 10px; }
+.history-sidebar { padding-left: 20px; border-left: 1px solid var(--line); }
+.history-section-heading strong { font: 600 15px 'Space Grotesk',sans-serif; }
+.history-section-heading > span:last-child { min-width: 22px; text-align: right; }
+.history-version-list { display: grid; gap: 5px; max-height: 450px; overflow-y: auto; }
+.history-version { display: grid; grid-template-columns: 34px minmax(0,1fr) auto; align-items: center; gap: 10px; width: 100%; min-height: 58px; padding: 8px; border: 1px solid transparent; background: transparent; color: var(--ink); text-align: left; }
+.history-version:hover { background: var(--card); }
+.history-version.active { border-color: var(--coral); background: var(--card); }
+.history-version-mark { display: grid; place-items: center; width: 30px; height: 30px; background: var(--lime); color: var(--ink); font-size: 10px; font-weight: 700; }
+.history-version-copy { display: grid; min-width: 0; gap: 3px; }
+.history-version-copy strong { font-size: 11px; }
+.history-version-copy small { overflow: hidden; color: var(--muted); font-size: 9px; text-overflow: ellipsis; white-space: nowrap; }
+.history-version-date { color: var(--muted); font-size: 9px; white-space: nowrap; }
 
 @media (min-width: 761px) {
   .auth-shell { grid-template-columns: 1.12fr .88fr; }
@@ -82,4 +113,10 @@ button:disabled { cursor: not-allowed; opacity: .55; }
   .transform-layout { grid-template-columns: minmax(0, 1fr); gap: 20px; }
   .transform-preview-panel { position: static; }
   .transform-preview-stage { aspect-ratio: 4 / 3; }
+  .history-modal { padding: 30px 20px 22px; }
+  .history-header { align-items: start; flex-direction: column; gap: 14px; }
+  .history-header h2 { max-width: calc(100% - 22px); font-size: 23px; }
+  .history-layout { grid-template-columns: minmax(0,1fr); gap: 18px; }
+  .history-sidebar { padding: 16px 0 0; border-top: 1px solid var(--line); border-left: 0; }
+  .history-version-list { max-height: 250px; }
 }

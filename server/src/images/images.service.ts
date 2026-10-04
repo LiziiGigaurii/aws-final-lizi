@@ -17,7 +17,11 @@ import type {
 	TransformImageDto,
 } from './dto/transform-image.dto';
 import { Album, AlbumDocument } from './schemas/albums.schema';
-import { Image, ImageDocument } from './schemas/images.schema';
+import {
+	Image,
+	ImageDocument,
+	ImageTransformHistory,
+} from './schemas/images.schema';
 
 @Injectable()
 export class ImagesService {
@@ -119,7 +123,7 @@ export class ImagesService {
 
 		try {
 			const inputBuffer = await this.storageService.downloadFile(
-				imageDocument.originalKey,
+				this.resolveSourceKey(imageDocument, transformations.sourceVersionId),
 			);
 			const image = sharp(inputBuffer);
 
@@ -213,18 +217,41 @@ export class ImagesService {
 			const url = await this.storageService.getSignedUrl(transformedKey);
 
 			imageDocument.transformedKeys.push(transformedKey);
-			imageDocument.markModified('transformedKeys');
-			await imageDocument.save();
-
-			return {
-				id: imageDocument._id,
-				url,
+			const { sourceVersionId } = transformations;
+			const settings = JSON.parse(
+				JSON.stringify({
+					resize: transformations.resize,
+					crop: transformations.crop,
+					rotate: transformations.rotate,
+					filters: transformations.filters,
+					compress: transformations.compress,
+					format: transformations.format,
+				}),
+			) as Record<string, unknown>;
+			const version: ImageTransformHistory = {
+				id: new Types.ObjectId().toString(),
+				version: imageDocument.transformedKeys.length,
+				key: transformedKey,
+				createdAt: new Date(),
+				sourceVersionId,
+				settings,
 				metadata: {
 					format: metadata.format,
 					size: outputBuffer.length,
 					width: metadata.width,
 					height: metadata.height,
 				},
+			};
+			imageDocument.transformHistory.push(version);
+			imageDocument.markModified('transformedKeys');
+			imageDocument.markModified('transformHistory');
+			await imageDocument.save();
+
+			return {
+				id: imageDocument._id,
+				versionId: version.id,
+				url,
+				metadata: version.metadata,
 			};
 		} catch (error) {
 			if (transformedKey) {
@@ -270,7 +297,7 @@ export class ImagesService {
 		}
 
 		const inputBuffer = await this.storageService.downloadFile(
-			imageDocument.originalKey,
+			this.resolveSourceKey(imageDocument, compression.sourceVersionId),
 		);
 		const format = compression.format ?? imageDocument.format ?? 'jpeg';
 		const normalizedFormat = format === 'jpg' ? 'jpeg' : format;
@@ -414,11 +441,24 @@ export class ImagesService {
 	}
 
 	private async toImageResponse(image: ImageDocument) {
-		const transformedUrls = await Promise.all(
-			image.transformedKeys.map((key) =>
-				this.storageService.getSignedUrl(key),
-			),
+		const historyByKey = new Map(
+			(image.transformHistory ?? []).map((version) => [version.key, version]),
 		);
+		const transformHistory = await Promise.all(
+			image.transformedKeys.map(async (key, index) => {
+				const version = historyByKey.get(key);
+				return {
+					id: version?.id ?? `legacy-${index + 1}`,
+					version: version?.version ?? index + 1,
+					url: await this.storageService.getSignedUrl(key),
+					createdAt: version?.createdAt ?? null,
+					sourceVersionId: version?.sourceVersionId,
+					settings: version?.settings ?? null,
+					metadata: version?.metadata ?? null,
+				};
+			}),
+		);
+		const transformedUrls = transformHistory.map((version) => version.url);
 
 		return {
 			id: image._id,
@@ -426,6 +466,7 @@ export class ImagesService {
 			isFavorite: image.isFavorite,
 			url: await this.storageService.getSignedUrl(image.originalKey),
 			transformedUrls,
+			transformHistory,
 			metadata: {
 				format: image.format,
 				size: image.size,
@@ -433,6 +474,25 @@ export class ImagesService {
 				height: image.height,
 			},
 		};
+	}
+
+	private resolveSourceKey(image: ImageDocument, sourceVersionId?: string) {
+		if (!sourceVersionId) return image.originalKey;
+
+		const version = (image.transformHistory ?? []).find(
+			(entry) => entry.id === sourceVersionId,
+		);
+		if (version) return version.key;
+
+		const legacyVersion = /^legacy-(\d+)$/.exec(sourceVersionId);
+		if (legacyVersion) {
+			const key = image.transformedKeys[Number(legacyVersion[1]) - 1];
+			if (key && !image.transformHistory?.some((entry) => entry.key === key)) {
+				return key;
+			}
+		}
+
+		throw new NotFoundException('არჩეული ვერსია ვერ მოიძებნა');
 	}
 
 	private validateObjectIds(imageId: string, ownerId: string) {
