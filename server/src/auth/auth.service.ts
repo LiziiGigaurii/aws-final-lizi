@@ -27,8 +27,30 @@ export class AuthService {
       throw new ConflictException('ეს username უკვე დაკავებულია');
     }
 
+    const existingEmail = await this.usersService.findByEmail(dto.email);
+    if (existingEmail) {
+      throw new ConflictException('ეს email უკვე რეგისტრირებულია');
+    }
+
     const hashedPassword = await bcrypt.hash(dto.password, 10);
-    const user = await this.usersService.create(dto.username, hashedPassword);
+    let user;
+    try {
+      user = await this.usersService.create(
+        dto.username,
+        dto.email,
+        hashedPassword,
+      );
+    } catch (error) {
+      if (
+        typeof error === 'object' &&
+        error !== null &&
+        'code' in error &&
+        error.code === 11000
+      ) {
+        throw new ConflictException('ეს email უკვე რეგისტრირებულია');
+      }
+      throw error;
+    }
 
     this.logger.info({ userId: user._id }, 'user წარმატებით დარეგისტრირდა');
 
@@ -36,18 +58,18 @@ export class AuthService {
   }
 
   async login(dto: LoginDto) {
-    this.logger.info({ username: dto.username }, 'შესვლის მცდელობა');
+    this.logger.info('შესვლის მცდელობა');
 
-    const user = await this.usersService.findByUsername(dto.username);
+    const user = await this.usersService.findByEmail(dto.email);
     if (!user) {
-      this.logger.warn({ username: dto.username }, 'user ვერ მოიძებნა');
-      throw new UnauthorizedException('არასწორი username ან password');
+      this.logger.warn('user ვერ მოიძებნა');
+      throw new UnauthorizedException('არასწორი email ან password');
     }
 
     const isPasswordValid = await bcrypt.compare(dto.password, user.password);
     if (!isPasswordValid) {
-      this.logger.warn({ username: dto.username }, 'არასწორი პაროლი');
-      throw new UnauthorizedException('არასწორი username ან password');
+      this.logger.warn('არასწორი პაროლი');
+      throw new UnauthorizedException('არასწორი email ან password');
     }
 
     // payload ისეთივეა, როგორსაც AuthGuard ელოდება: userId, role
@@ -56,6 +78,6 @@ export class AuthService {
 
     this.logger.info({ userId: user._id }, 'user წარმატებით შევიდა');
 
-    return { access_token: token };
+    return { access_token: token, username: user.username };
   }
 }

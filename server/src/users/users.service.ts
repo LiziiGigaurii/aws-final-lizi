@@ -13,9 +13,15 @@ export class UsersService {
     return user;
   }
 
-  async create(username: string, hashedPassword: string) {
+  async findByEmail(email: string) {
+    const user = await this.userModel.findOne({ email: email });
+    return user;
+  }
+
+  async create(username: string, email: string, hashedPassword: string) {
     const newUser = new this.userModel({
       username: username,
+      email: email,
       password: hashedPassword,
     });
 

@@ -59,6 +59,7 @@ function formatBytes(bytes?: number) {
 export default function Home() {
   const [token, setToken] = useState("");
   const [username, setUsername] = useState("");
+  const [email, setEmail] = useState("");
   const [ready, setReady] = useState(false);
   const [registerMode, setRegisterMode] = useState(false);
   const [authError, setAuthError] = useState("");
@@ -192,6 +193,7 @@ export default function Home() {
     event.preventDefault();
     const form = new FormData(event.currentTarget);
     const name = String(form.get("username") || "").trim();
+    const accountEmail = String(form.get("email") || "").trim().toLowerCase();
     const password = String(form.get("password") || "");
     setAuthBusy(true);
     setAuthError("");
@@ -200,23 +202,30 @@ export default function Home() {
         await apiRequest("/auth/register", "", {
           method: "POST",
           headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ username: name, password }),
+          body: JSON.stringify({
+            username: name,
+            email: accountEmail,
+            password,
+          }),
         });
         setRegisterMode(false);
         showToast("Workspace created. Sign in to continue.");
       } else {
-        const result = await apiRequest<{ access_token: string }>(
+        const result = await apiRequest<{
+          access_token: string;
+          username: string;
+        }>(
           "/auth/login",
           "",
           {
             method: "POST",
             headers: { "Content-Type": "application/json" },
-            body: JSON.stringify({ username: name, password }),
+            body: JSON.stringify({ email: accountEmail, password }),
           },
         );
         localStorage.setItem("framehouse_token", result.access_token);
-        localStorage.setItem("framehouse_user", name);
-        setUsername(name);
+        localStorage.setItem("framehouse_user", result.username);
+        setUsername(result.username);
         setToken(result.access_token);
       }
     } catch (error) {
@@ -468,14 +477,28 @@ export default function Home() {
               </p>
             </div>
             <form className="auth-form" onSubmit={handleAuth}>
+              {registerMode && (
+                <label className="field">
+                  <span>Username</span>
+                  <input
+                    name="username"
+                    required
+                    minLength={3}
+                    autoComplete="username"
+                    placeholder="your name"
+                  />
+                </label>
+              )}
               <label className="field">
-                <span>Username</span>
+                <span>Email</span>
                 <input
-                  name="username"
+                  name="email"
+                  type="email"
                   required
-                  minLength={3}
-                  autoComplete="username"
-                  placeholder="your name"
+                  autoComplete="email"
+                  placeholder="you@example.com"
+                  value={email}
+                  onChange={(event) => setEmail(event.target.value)}
                 />
               </label>
               <label className="field">
