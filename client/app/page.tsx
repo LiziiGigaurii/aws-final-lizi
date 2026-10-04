@@ -1,6 +1,13 @@
 "use client";
 
-import { ChangeEvent, FormEvent, useEffect, useRef, useState } from "react";
+import {
+  ChangeEvent,
+  FormEvent,
+  PointerEvent as ReactPointerEvent,
+  useEffect,
+  useRef,
+  useState,
+} from "react";
 import Image from "next/image";
 
 type ImageMetadata = {
@@ -28,6 +35,65 @@ type Album = {
   name: string;
   imageCount: number;
 };
+
+type CropSelection = { x: number; y: number; width: number; height: number };
+type CropGestureMode =
+  | "draw"
+  | "move"
+  | "resize-nw"
+  | "resize-ne"
+  | "resize-sw"
+  | "resize-se";
+type CropGesture = {
+  mode: CropGestureMode;
+  startX: number;
+  startY: number;
+  pointX: number;
+  pointY: number;
+  selection: CropSelection | null;
+};
+
+function clampUnit(value: number) {
+  return Math.min(1, Math.max(0, value));
+}
+
+function cropSelectionForGesture(gesture: CropGesture): CropSelection {
+  const { mode, startX, startY, pointX, pointY, selection } = gesture;
+  if (mode === "draw") {
+    return {
+      x: Math.min(startX, pointX),
+      y: Math.min(startY, pointY),
+      width: Math.abs(pointX - startX),
+      height: Math.abs(pointY - startY),
+    };
+  }
+
+  if (!selection) return { x: 0, y: 0, width: 0, height: 0 };
+  if (mode === "move") {
+    return {
+      ...selection,
+      x: Math.min(1 - selection.width, Math.max(0, selection.x + pointX - startX)),
+      y: Math.min(1 - selection.height, Math.max(0, selection.y + pointY - startY)),
+    };
+  }
+
+  let left = selection.x;
+  let top = selection.y;
+  let right = selection.x + selection.width;
+  let bottom = selection.y + selection.height;
+  const corner = mode.slice(-2);
+  if (corner.includes("w")) left = Math.min(pointX, right - 0.02);
+  if (corner.includes("e")) right = Math.max(pointX, left + 0.02);
+  if (corner.includes("n")) top = Math.min(pointY, bottom - 0.02);
+  if (corner.includes("s")) bottom = Math.max(pointY, top + 0.02);
+
+  return {
+    x: clampUnit(left),
+    y: clampUnit(top),
+    width: Math.max(0.02, right - left),
+    height: Math.max(0.02, bottom - top),
+  };
+}
 
 const API_URL = "";
 
@@ -90,6 +156,9 @@ export default function Home() {
   const [selectedImage, setSelectedImage] = useState<LibraryImage | null>(null);
   const [quality, setQuality] = useState(80);
   const [rotation, setRotation] = useState(0);
+  const [cropMode, setCropMode] = useState(false);
+  const [cropSelection, setCropSelection] = useState<CropSelection | null>(null);
+  const [cropGesture, setCropGesture] = useState<CropGesture | null>(null);
   const [transformBusy, setTransformBusy] = useState(false);
   const [uploadBusy, setUploadBusy] = useState(false);
   const [transformFields, setTransformFields] = useState({
@@ -103,6 +172,8 @@ export default function Home() {
     sepia: false,
   });
   const fileInput = useRef<HTMLInputElement>(null);
+  const previewFrame = useRef<HTMLDivElement>(null);
+  const cropInteraction = useRef<HTMLDivElement>(null);
   const toastTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   useEffect(() => {
@@ -299,6 +370,9 @@ export default function Home() {
     setSelectedImage(null);
     setQuality(80);
     setRotation(0);
+    setCropMode(false);
+    setCropSelection(null);
+    setCropGesture(null);
     setTransformFields({
       width: "",
       height: "",
@@ -309,6 +383,65 @@ export default function Home() {
       flip: false,
       sepia: false,
     });
+  }
+
+  function getCropPoint(event: ReactPointerEvent<HTMLElement>) {
+    const bounds = previewFrame.current?.getBoundingClientRect();
+    if (!bounds) return { x: 0, y: 0 };
+    return {
+      x: clampUnit((event.clientX - bounds.left) / bounds.width),
+      y: clampUnit((event.clientY - bounds.top) / bounds.height),
+    };
+  }
+
+  function beginCropGesture(
+    event: ReactPointerEvent<HTMLElement>,
+    requestedMode?: CropGestureMode,
+  ) {
+    if (!cropMode || !previewFrame.current || !cropInteraction.current) return;
+    event.preventDefault();
+    cropInteraction.current.setPointerCapture(event.pointerId);
+    const point = getCropPoint(event);
+    const isInsideSelection =
+      cropSelection &&
+      point.x >= cropSelection.x &&
+      point.x <= cropSelection.x + cropSelection.width &&
+      point.y >= cropSelection.y &&
+      point.y <= cropSelection.y + cropSelection.height;
+    const mode = requestedMode || (isInsideSelection ? "move" : "draw");
+    if (mode === "draw") setCropSelection(null);
+    setCropGesture({
+      mode,
+      startX: point.x,
+      startY: point.y,
+      pointX: point.x,
+      pointY: point.y,
+      selection: cropSelection,
+    });
+  }
+
+  function updateCropGesture(event: ReactPointerEvent<HTMLElement>) {
+    if (!cropGesture) return;
+    event.preventDefault();
+    const point = getCropPoint(event);
+    setCropGesture((gesture) =>
+      gesture ? { ...gesture, pointX: point.x, pointY: point.y } : null,
+    );
+  }
+
+  function finishCropGesture(event: ReactPointerEvent<HTMLElement>) {
+    if (!cropGesture) return;
+    event.preventDefault();
+    const point = getCropPoint(event);
+    const selection = cropSelectionForGesture({
+      ...cropGesture,
+      pointX: point.x,
+      pointY: point.y,
+    });
+    setCropSelection(
+      selection.width >= 0.02 && selection.height >= 0.02 ? selection : null,
+    );
+    setCropGesture(null);
   }
 
   async function handleTransform(event: FormEvent<HTMLFormElement>) {
@@ -327,6 +460,7 @@ export default function Home() {
     const width = Number(transformFields.width);
     const height = Number(transformFields.height);
     if (width && height) body.resize = { width, height };
+    if (cropPixelRect) body.crop = cropPixelRect;
     if (rotation) body.rotate = rotation;
     if (transformFields.format) body.format = transformFields.format;
 
@@ -459,12 +593,53 @@ export default function Home() {
     .join(" ") || "none";
   const hasCustomDimensions =
     Number(transformFields.width) > 0 && Number(transformFields.height) > 0;
+  const sourceWidth = selectedImage?.metadata?.width ?? 0;
+  const sourceHeight = selectedImage?.metadata?.height ?? 0;
+  const cropCoordinateWidth = hasCustomDimensions
+    ? Number(transformFields.width)
+    : sourceWidth;
+  const cropCoordinateHeight = hasCustomDimensions
+    ? Number(transformFields.height)
+    : sourceHeight;
+  const cropX = cropSelection
+    ? Math.round(cropSelection.x * cropCoordinateWidth)
+    : 0;
+  const cropY = cropSelection
+    ? Math.round(cropSelection.y * cropCoordinateHeight)
+    : 0;
+  const cropRight = cropSelection
+    ? Math.round(
+        (cropSelection.x + cropSelection.width) * cropCoordinateWidth,
+      )
+    : 0;
+  const cropBottom = cropSelection
+    ? Math.round(
+        (cropSelection.y + cropSelection.height) * cropCoordinateHeight,
+      )
+    : 0;
+  const cropPixelRect =
+    cropSelection && cropCoordinateWidth > 0 && cropCoordinateHeight > 0
+      ? {
+          x: cropX,
+          y: cropY,
+          width: Math.max(1, Math.min(cropCoordinateWidth, cropRight) - cropX),
+          height: Math.max(
+            1,
+            Math.min(cropCoordinateHeight, cropBottom) - cropY,
+          ),
+        }
+      : null;
+  const activeCropSelection = cropGesture
+    ? cropSelectionForGesture(cropGesture)
+    : cropSelection;
   const previewRadians = (rotation * Math.PI) / 180;
   const previewCosine = Math.abs(Math.cos(previewRadians));
   const previewSine = Math.abs(Math.sin(previewRadians));
   const previewBoxAspect = hasCustomDimensions
     ? Number(transformFields.width) / Number(transformFields.height)
-    : 5 / 4;
+    : sourceWidth && sourceHeight
+      ? sourceWidth / sourceHeight
+      : 5 / 4;
   const previewScale = Math.min(
     1,
     1 / (previewCosine + previewSine / previewBoxAspect),
@@ -976,13 +1151,14 @@ export default function Home() {
                 <div className="transform-preview-stage">
                   <div
                     className="transform-preview-frame"
+                    ref={previewFrame}
                     style={{
                       width:
-                        hasCustomDimensions && previewBoxAspect < 5 / 4
+                        previewBoxAspect < 5 / 4
                           ? `${(previewBoxAspect / (5 / 4)) * 100}%`
                           : "100%",
                       height:
-                        hasCustomDimensions && previewBoxAspect > 5 / 4
+                        previewBoxAspect > 5 / 4
                           ? `${((5 / 4) / previewBoxAspect) * 100}%`
                           : "100%",
                     }}
@@ -996,9 +1172,55 @@ export default function Home() {
                       style={{
                         objectFit: hasCustomDimensions ? "cover" : "contain",
                         filter: previewFilter,
-                        transform: `rotate(${rotation}deg) scale(${previewScale}) scaleX(${transformFields.mirror ? -1 : 1}) scaleY(${transformFields.flip ? -1 : 1})`,
+                        transform: cropMode
+                          ? "none"
+                          : `rotate(${rotation}deg) scale(${previewScale}) scaleX(${transformFields.mirror ? -1 : 1}) scaleY(${transformFields.flip ? -1 : 1})`,
                       }}
                     />
+                    {cropMode && (
+                      <div
+                        className="crop-interaction"
+                        ref={cropInteraction}
+                        onPointerDown={beginCropGesture}
+                        onPointerMove={updateCropGesture}
+                        onPointerUp={finishCropGesture}
+                        onPointerCancel={() => setCropGesture(null)}
+                      >
+                        {activeCropSelection ? (
+                          <div
+                            className="crop-selection"
+                            style={{
+                              left: `${activeCropSelection.x * 100}%`,
+                              top: `${activeCropSelection.y * 100}%`,
+                              width: `${activeCropSelection.width * 100}%`,
+                              height: `${activeCropSelection.height * 100}%`,
+                            }}
+                          >
+                            {(["nw", "ne", "sw", "se"] as const).map(
+                              (corner) => (
+                                <button
+                                  key={corner}
+                                  type="button"
+                                  className={`crop-handle crop-handle-${corner}`}
+                                  aria-label={`Resize crop ${corner}`}
+                                  onPointerDown={(event) => {
+                                    event.stopPropagation();
+                                    beginCropGesture(
+                                      event,
+                                      `resize-${corner}` as CropGestureMode,
+                                    );
+                                  }}
+                                />
+                              ),
+                            )}
+                          </div>
+                        ) : (
+                          <span className="crop-instruction">
+                            Drag across the photo to select a crop
+                          </span>
+                        )}
+                      </div>
+                    )}
                   </div>
                 </div>
                 <div className="transform-preview-details">
@@ -1014,6 +1236,40 @@ export default function Home() {
                   </span>
                   <span>Quality {quality}%</span>
                 </div>
+                <div className="crop-tools">
+                  <button
+                    type="button"
+                    className={`crop-mode-button${cropMode ? " is-active" : ""}`}
+                    aria-pressed={cropMode}
+                    onClick={() => {
+                      setCropMode((active) => !active);
+                      setCropGesture(null);
+                    }}
+                  >
+                    {cropMode ? "Done cropping" : "Crop photo"}
+                  </button>
+                  {cropSelection && cropPixelRect && (
+                    <>
+                      <span className="crop-dimensions">
+                        Crop {cropPixelRect.width} × {cropPixelRect.height} px
+                      </span>
+                      <button
+                        type="button"
+                        className="crop-reset-button"
+                        onClick={() => setCropSelection(null)}
+                      >
+                        Reset crop
+                      </button>
+                    </>
+                  )}
+                </div>
+                <p className="crop-help">
+                  {cropMode
+                    ? "Drag inside the frame to draw or move the crop; use a corner to resize it."
+                    : cropSelection
+                      ? "Crop area selected. Choose Crop photo to adjust it."
+                      : "Crop the photo directly to choose the exact area to keep."}
+                </p>
               </section>
               <form className="transform-form" onSubmit={handleTransform}>
               <div className="control-group">

@@ -40,6 +40,20 @@ button:disabled { cursor: not-allowed; opacity: .55; }
 .transform-preview-stage img { transition: filter .18s ease, transform .18s ease; }
 .transform-preview-details { flex-wrap: wrap; margin-top: 12px; color: var(--muted); font-size: 10px; }
 .transform-form { min-width: 0; margin-top: 0; gap: 16px; }
+.crop-interaction { position: absolute; z-index: 2; inset: 0; overflow: hidden; cursor: crosshair; touch-action: none; user-select: none; }
+.crop-instruction { position: absolute; left: 50%; top: 50%; max-width: calc(100% - 24px); transform: translate(-50%, -50%); padding: 8px 10px; background: rgba(24,33,30,.78); color: #fff; font-size: 11px; text-align: center; pointer-events: none; }
+.crop-selection { position: absolute; border: 1px solid #fff; box-shadow: 0 0 0 999px rgba(24,33,30,.5); cursor: move; }
+.crop-handle { position: absolute; z-index: 1; width: 18px; height: 18px; padding: 0; border: 2px solid #fff; border-radius: 2px; background: var(--coral); touch-action: none; }
+.crop-handle-nw { top: -9px; left: -9px; cursor: nwse-resize; }
+.crop-handle-ne { top: -9px; right: -9px; cursor: nesw-resize; }
+.crop-handle-sw { bottom: -9px; left: -9px; cursor: nesw-resize; }
+.crop-handle-se { bottom: -9px; right: -9px; cursor: nwse-resize; }
+.crop-tools { display: flex; align-items: center; flex-wrap: wrap; gap: 10px; margin-top: 12px; }
+.crop-mode-button, .crop-reset-button { min-height: 36px; padding: 7px 11px; border: 1px solid var(--line); background: var(--card); color: var(--ink); font-size: 11px; font-weight: 700; }
+.crop-mode-button.is-active { border-color: var(--ink); background: var(--ink); color: #fff; }
+.crop-reset-button { border-color: transparent; background: transparent; color: var(--muted); }
+.crop-dimensions { color: var(--coral); font-size: 11px; font-weight: 700; }
+.crop-help { margin-top: 7px; color: var(--muted); font-size: 10px; line-height: 1.5; }
 
 @media (min-width: 761px) {
   .auth-shell { grid-template-columns: 1.12fr .88fr; }
