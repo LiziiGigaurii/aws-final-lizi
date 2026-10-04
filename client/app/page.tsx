@@ -1206,7 +1206,11 @@ export default function Home() {
                             />
                           </label>
                         )}
-                        <a href={previewUrl} target="_blank" rel="noreferrer">
+                        <button
+                          className="image-open-history"
+                          onClick={() => openHistory(image)}
+                          aria-label={`View ${versionLabel} and photo history`}
+                        >
                           <Image
                             className="image-preview"
                             src={previewUrl}
@@ -1215,7 +1219,7 @@ export default function Home() {
                             height={640}
                             unoptimized
                           />
-                        </a>
+                        </button>
                         <button
                           className={`favorite-button${image.isFavorite ? " favorite-active" : ""}`}
                           onClick={() => void toggleFavorite(image)}
@@ -1650,7 +1654,7 @@ export default function Home() {
       )}
       {historyImage && (
         <div
-          className="modal-backdrop"
+          className="modal-backdrop history-backdrop"
           onMouseDown={(event) => {
             if (event.target === event.currentTarget) setHistoryImage(null);
           }}
@@ -1671,6 +1675,12 @@ export default function Home() {
             </button>
             <header className="history-header">
               <div>
+                <button
+                  className="history-back-button"
+                  onClick={() => setHistoryImage(null)}
+                >
+                  ← Back to library
+                </button>
                 <span className="eyebrow">PHOTO HISTORY</span>
                 <h2 id="historyTitle">Every version, one frame.</h2>
                 <p>
