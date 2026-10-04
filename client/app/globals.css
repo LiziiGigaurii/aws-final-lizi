@@ -86,8 +86,8 @@ button:disabled { cursor: not-allowed; opacity: .55; }
 .history-sidebar { display: flex; flex-direction: column; padding-left: 20px; border-left: 1px solid var(--line); }
 .history-section-heading strong { font: 600 15px 'Space Grotesk',sans-serif; }
 .history-section-heading > span:last-child { min-width: 22px; text-align: right; }
-.history-version-list { display: grid; flex: 1; gap: 5px; min-height: 0; overflow-y: auto; }
-.history-version { display: grid; grid-template-columns: 56px minmax(0,1fr); align-items: center; gap: 10px; width: 100%; min-height: 72px; padding: 8px; border: 1px solid transparent; background: transparent; color: var(--ink); text-align: left; }
+.history-version-list { display: grid; flex: 1; align-content: start; gap: 5px; min-height: 0; overflow-y: auto; }
+.history-version { display: grid; grid-template-columns: 56px minmax(0,1fr); align-items: center; align-self: start; gap: 10px; width: 100%; min-height: 72px; padding: 8px; border: 1px solid transparent; background: transparent; color: var(--ink); text-align: left; }
 .history-version:hover { background: var(--card); }
 .history-version.active { border-color: var(--coral); background: var(--card); }
 .history-version-thumb { position: relative; display: block; width: 56px; aspect-ratio: 4 / 3; overflow: hidden; background: var(--line); }

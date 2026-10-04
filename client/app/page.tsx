@@ -202,9 +202,6 @@ export default function Home() {
   const [deleteBusy, setDeleteBusy] = useState(false);
   const [loading, setLoading] = useState(false);
   const [refreshKey, setRefreshKey] = useState(0);
-  const [originalPreviewIds, setOriginalPreviewIds] = useState<Set<string>>(
-    new Set(),
-  );
   const [toast, setToast] = useState<{
     message: string;
     error: boolean;
@@ -666,11 +663,6 @@ export default function Home() {
           ),
         );
       }
-      setOriginalPreviewIds((current) => {
-        const next = new Set(current);
-        next.delete(selectedImage.id);
-        return next;
-      });
       closeTransform();
       showToast("New version created.");
       setRefreshKey((value) => value + 1);
@@ -1203,14 +1195,9 @@ export default function Home() {
                   <div className={`gallery${loading ? " is-loading" : ""}`}>
                 {images.map((image) => {
                   const transformedUrls = image.transformedUrls || [];
-                  const showingOriginal = originalPreviewIds.has(image.id);
-                  const previewUrl = showingOriginal
-                    ? image.url
-                    : transformedUrls.at(-1) || image.url;
+                  const previewUrl = transformedUrls.at(-1) || image.url;
                   const versionLabel =
-                    showingOriginal || !transformedUrls.length
-                      ? "original"
-                      : "latest version";
+                    transformedUrls.length ? "latest version" : "original";
                   return (
                     <article className="image-card" key={image.id}>
                       <div className="image-visual">
@@ -1279,23 +1266,6 @@ export default function Home() {
                           >
                             History ({(image.transformHistory || []).length + 1})
                           </button>
-                          {transformedUrls.length > 0 && (
-                            <button
-                              className="card-button"
-                              onClick={() =>
-                                setOriginalPreviewIds((current) => {
-                                  const next = new Set(current);
-                                  if (showingOriginal) next.delete(image.id);
-                                  else next.add(image.id);
-                                  return next;
-                                })
-                              }
-                            >
-                              {showingOriginal
-                                ? "Show latest"
-                                : "Show original"}
-                            </button>
-                          )}
                           <button
                             className="card-button delete"
                             onClick={() => void deleteImage(image)}
