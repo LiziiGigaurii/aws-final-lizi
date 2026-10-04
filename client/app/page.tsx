@@ -1161,10 +1161,7 @@ export default function Home() {
                         previewAspect < 5 / 4
                           ? `${(previewAspect / (5 / 4)) * 100}%`
                           : "100%",
-                      height:
-                        previewAspect > 5 / 4
-                          ? `${((5 / 4) / previewAspect) * 100}%`
-                          : "100%",
+                      aspectRatio: String(previewAspect),
                       transform: isCropResult
                         ? `rotate(${rotation}deg) scale(${previewScale}) scaleX(${transformFields.mirror ? -1 : 1}) scaleY(${transformFields.flip ? -1 : 1})`
                         : "none",
