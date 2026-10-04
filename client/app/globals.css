@@ -103,6 +103,27 @@ button:disabled { cursor: not-allowed; opacity: .55; }
 .card-actions .card-button.delete { border-color: var(--line); color: var(--muted); }
 .card-actions .card-button.delete:hover { border-color: #d59a93; background: #fff0ed; color: #9e443b; }
 .card-actions:not(.has-versions) .card-button.delete { grid-column: 1 / -1; }
+.action-modal-backdrop { z-index: 20; padding: 16px; background: rgba(24,33,30,.54); backdrop-filter: blur(5px); }
+.action-dialog { width: min(440px, 100%); padding: 30px; border: 1px solid rgba(24,33,30,.08); background: var(--paper); box-shadow: 0 24px 70px rgba(0,0,0,.24); animation: action-dialog-enter .18s ease-out; }
+.action-dialog-icon { display: grid; place-items: center; width: 42px; height: 42px; margin-bottom: 18px; background: var(--lime); color: var(--ink); font-size: 19px; }
+.delete-dialog-icon { background: #f8ded8; color: #9e443b; font-weight: 700; }
+.action-dialog h2 { margin: 7px 0 8px; color: var(--ink); font: 600 25px 'Space Grotesk',sans-serif; }
+.action-dialog-copy { max-width: 350px; color: var(--muted); font-size: 12px; line-height: 1.55; }
+.action-dialog-form { display: grid; gap: 4px; margin-top: 22px; }
+.action-dialog-feedback { min-height: 16px; color: #b5483c; font-size: 11px; }
+.action-dialog-actions { display: flex; justify-content: flex-end; gap: 9px; margin-top: 12px; }
+.action-dialog-actions .button { min-width: 128px; padding: 11px 14px; font-size: 12px; }
+.action-cancel-button { min-height: 42px; padding: 10px 14px; border: 1px solid var(--line); background: var(--card); color: var(--ink-soft); font-size: 12px; font-weight: 600; }
+.action-cancel-button:hover { border-color: var(--ink-soft); }
+.delete-photo-preview { display: grid; grid-template-columns: 64px minmax(0,1fr); align-items: center; gap: 12px; margin: 18px 0 12px; padding: 10px; border: 1px solid var(--line); background: var(--card); }
+.delete-photo-thumb { position: relative; width: 64px; aspect-ratio: 1; overflow: hidden; background: var(--line); }
+.delete-photo-preview > div:last-child { display: grid; gap: 5px; }
+.delete-photo-preview strong { color: var(--ink); font-size: 12px; }
+.delete-photo-preview span { color: var(--muted); font-size: 10px; }
+.delete-warning { max-width: none; }
+.delete-confirm-button { min-width: 128px; min-height: 42px; padding: 10px 14px; border: 0; background: #a7443b; color: #fff; font-size: 12px; font-weight: 700; }
+.delete-confirm-button:hover { background: #87332d; }
+@keyframes action-dialog-enter { from { opacity: 0; transform: translateY(6px) scale(.99); } to { opacity: 1; transform: translateY(0) scale(1); } }
 
 @media (min-width: 761px) {
   .auth-shell { grid-template-columns: 1.12fr .88fr; }
@@ -139,4 +160,7 @@ button:disabled { cursor: not-allowed; opacity: .55; }
   .image-card .image-meta .card-actions { grid-template-columns: minmax(0, 1fr); }
   .image-card .image-meta .card-actions .card-button { min-height: 44px; font-size: 12px; }
   .image-card .image-meta .card-actions:not(.has-versions) .card-button.delete { grid-column: 1; }
+  .action-dialog { padding: 24px 20px; }
+  .action-dialog-actions { flex-direction: column-reverse; }
+  .action-dialog-actions .button, .action-cancel-button, .delete-confirm-button { width: 100%; }
 }

@@ -195,6 +195,11 @@ export default function Home() {
   );
   const [albumTargetId, setAlbumTargetId] = useState("");
   const [albumBusy, setAlbumBusy] = useState(false);
+  const [albumDialogOpen, setAlbumDialogOpen] = useState(false);
+  const [albumName, setAlbumName] = useState("");
+  const [albumError, setAlbumError] = useState("");
+  const [deleteTarget, setDeleteTarget] = useState<LibraryImage | null>(null);
+  const [deleteBusy, setDeleteBusy] = useState(false);
   const [loading, setLoading] = useState(false);
   const [refreshKey, setRefreshKey] = useState(0);
   const [originalPreviewIds, setOriginalPreviewIds] = useState<Set<string>>(
@@ -480,8 +485,13 @@ export default function Home() {
   }
 
   async function deleteImage(image: LibraryImage) {
-    if (!window.confirm("Delete this image and all transformed versions?"))
-      return;
+    setDeleteTarget(image);
+  }
+
+  async function confirmDeleteImage() {
+    if (!deleteTarget || deleteBusy) return;
+    const image = deleteTarget;
+    setDeleteBusy(true);
     try {
       await apiRequest(`/images/${image.id}`, token, { method: "DELETE" });
       setSelectedImageIds((current) => {
@@ -489,6 +499,7 @@ export default function Home() {
         next.delete(image.id);
         return next;
       });
+      setDeleteTarget(null);
       showToast("Image removed from the library.");
       setRefreshKey((value) => value + 1);
     } catch (error) {
@@ -496,6 +507,8 @@ export default function Home() {
         error instanceof Error ? error.message : "Unable to delete image.",
         true,
       );
+    } finally {
+      setDeleteBusy(false);
     }
   }
 
@@ -685,10 +698,22 @@ export default function Home() {
     setPage(1);
   }
 
-  async function createAlbum() {
-    const name = window.prompt("Album name")?.trim();
-    if (!name) return;
+  function createAlbum() {
+    setAlbumName("");
+    setAlbumError("");
+    setAlbumDialogOpen(true);
+  }
+
+  async function handleCreateAlbum(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    const name = albumName.trim();
+    if (!name || name.length > 80) {
+      setAlbumError("Album names must be between 1 and 80 characters.");
+      return;
+    }
+
     setAlbumBusy(true);
+    setAlbumError("");
     try {
       const album = await apiRequest<Album>("/albums", token, {
         method: "POST",
@@ -700,11 +725,11 @@ export default function Home() {
       setActiveTab("library");
       setOpenAlbumId("");
       setPage(1);
+      setAlbumDialogOpen(false);
       showToast("Album created. Select photos to add.");
     } catch (error) {
-      showToast(
+      setAlbumError(
         error instanceof Error ? error.message : "Unable to create album.",
-        true,
       );
     } finally {
       setAlbumBusy(false);
@@ -1309,6 +1334,128 @@ export default function Home() {
         </main>
       )}
 
+      {albumDialogOpen && (
+        <div
+          className="modal-backdrop action-modal-backdrop"
+          onMouseDown={(event) => {
+            if (event.target === event.currentTarget && !albumBusy) {
+              setAlbumDialogOpen(false);
+            }
+          }}
+        >
+          <section
+            className="action-dialog"
+            role="dialog"
+            aria-modal="true"
+            aria-labelledby="createAlbumTitle"
+          >
+            <div className="action-dialog-icon album-dialog-icon">▣</div>
+            <span className="eyebrow">YOUR COLLECTION</span>
+            <h2 id="createAlbumTitle">Create an album</h2>
+            <p className="action-dialog-copy">
+              Give this collection a name. You can add photos to it next.
+            </p>
+            <form className="action-dialog-form" onSubmit={handleCreateAlbum}>
+              <label className="field">
+                <span>Album name</span>
+                <input
+                  autoFocus
+                  autoComplete="off"
+                  type="text"
+                  maxLength={80}
+                  placeholder="e.g. Summer in the hills"
+                  value={albumName}
+                  onChange={(event) => {
+                    setAlbumName(event.target.value);
+                    if (albumError) setAlbumError("");
+                  }}
+                />
+              </label>
+              <div className="action-dialog-feedback" role="alert">
+                {albumError}
+              </div>
+              <div className="action-dialog-actions">
+                <button
+                  className="action-cancel-button"
+                  type="button"
+                  disabled={albumBusy}
+                  onClick={() => setAlbumDialogOpen(false)}
+                >
+                  Cancel
+                </button>
+                <button
+                  className="button button-coral"
+                  type="submit"
+                  disabled={albumBusy || !albumName.trim()}
+                >
+                  {albumBusy ? "Creating…" : "Create album"}
+                </button>
+              </div>
+            </form>
+          </section>
+        </div>
+      )}
+      {deleteTarget && (
+        <div
+          className="modal-backdrop action-modal-backdrop"
+          onMouseDown={(event) => {
+            if (event.target === event.currentTarget && !deleteBusy) {
+              setDeleteTarget(null);
+            }
+          }}
+        >
+          <section
+            className="action-dialog delete-dialog"
+            role="alertdialog"
+            aria-modal="true"
+            aria-labelledby="deletePhotoTitle"
+          >
+            <div className="action-dialog-icon delete-dialog-icon">!</div>
+            <span className="eyebrow">REMOVE FROM LIBRARY</span>
+            <h2 id="deletePhotoTitle">Delete this photo?</h2>
+            <div className="delete-photo-preview">
+              <div className="delete-photo-thumb">
+                <Image
+                  src={deleteTarget.transformedUrls?.at(-1) || deleteTarget.url}
+                  alt="Photo selected for deletion"
+                  fill
+                  sizes="64px"
+                  unoptimized
+                />
+              </div>
+              <div>
+                <strong>
+                  {deleteTarget.metadata?.format?.toUpperCase() || "IMAGE"} photo
+                </strong>
+                <span>
+                  {deleteTarget.metadata?.width || "—"} × {deleteTarget.metadata?.height || "—"} px
+                </span>
+              </div>
+            </div>
+            <p className="action-dialog-copy delete-warning">
+              The original and all {(deleteTarget.transformHistory || []).length} transformed versions will be permanently deleted.
+            </p>
+            <div className="action-dialog-actions">
+              <button
+                className="action-cancel-button"
+                type="button"
+                disabled={deleteBusy}
+                onClick={() => setDeleteTarget(null)}
+              >
+                Keep photo
+              </button>
+              <button
+                className="button delete-confirm-button"
+                type="button"
+                disabled={deleteBusy}
+                onClick={() => void confirmDeleteImage()}
+              >
+                {deleteBusy ? "Deleting…" : "Delete photo"}
+              </button>
+            </div>
+          </section>
+        </div>
+      )}
       {selectedImage && (
         <div
           className="modal-backdrop"
