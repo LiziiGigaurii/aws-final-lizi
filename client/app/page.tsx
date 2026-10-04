@@ -1250,16 +1250,16 @@ export default function Home() {
                   </button>
                   {cropSelection && cropPixelRect && (
                     <>
-                      <span className="crop-dimensions">
-                        Crop {cropPixelRect.width} × {cropPixelRect.height} px
-                      </span>
-                      <button
-                        type="button"
-                        className="crop-reset-button"
-                        onClick={() => setCropSelection(null)}
-                      >
-                        Reset crop
-                      </button>
+                    <span className="crop-dimensions">
+                      Crop {cropPixelRect.width} × {cropPixelRect.height} px
+                    </span>
+                    <button
+                      type="button"
+                      className="crop-reset-button"
+                      onClick={() => setCropSelection(null)}
+                    >
+                      Reset crop
+                    </button>
                     </>
                   )}
                 </div>
@@ -1390,28 +1390,30 @@ export default function Home() {
                   ),
                 )}
               </div>
-              <label className="field quality-field">
-                <span>
-                  Compression quality <b>{quality}</b>
-                </span>
-                <input
-                  type="range"
-                  min="1"
-                  max="100"
-                  value={quality}
-                  onChange={(event) => setQuality(Number(event.target.value))}
-                />
-              </label>
-              <button
-                className="button button-dark button-wide"
-                type="submit"
-                disabled={transformBusy}
-              >
-                {transformBusy
-                  ? "Creating version…"
-                  : "Create transformed version"}{" "}
-                <span>↗</span>
-              </button>
+              <div className="transform-actions">
+                <label className="field quality-field">
+                  <span>
+                    Compression quality <b>{quality}</b>
+                  </span>
+                  <input
+                    type="range"
+                    min="1"
+                    max="100"
+                    value={quality}
+                    onChange={(event) => setQuality(Number(event.target.value))}
+                  />
+                </label>
+                <button
+                  className="button button-dark button-wide"
+                  type="submit"
+                  disabled={transformBusy}
+                >
+                  {transformBusy
+                    ? "Creating version…"
+                    : "Create transformed version"}{" "}
+                  <span>↗</span>
+                </button>
+              </div>
               </form>
             </div>
           </section>
