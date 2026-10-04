@@ -640,10 +640,14 @@ export default function Home() {
     : sourceWidth && sourceHeight
       ? sourceWidth / sourceHeight
       : 5 / 4;
+  const isCropResult = Boolean(cropSelection && !cropMode);
+  const previewAspect = isCropResult
+    ? previewBoxAspect * (cropSelection!.width / cropSelection!.height)
+    : previewBoxAspect;
   const previewScale = Math.min(
     1,
-    1 / (previewCosine + previewSine / previewBoxAspect),
-    1 / (previewCosine + previewSine * previewBoxAspect),
+    1 / (previewCosine + previewSine / previewAspect),
+    1 / (previewCosine + previewSine * previewAspect),
   );
   const previewWidth = hasCustomDimensions
     ? Number(transformFields.width)
@@ -1154,29 +1158,47 @@ export default function Home() {
                     ref={previewFrame}
                     style={{
                       width:
-                        previewBoxAspect < 5 / 4
-                          ? `${(previewBoxAspect / (5 / 4)) * 100}%`
+                        previewAspect < 5 / 4
+                          ? `${(previewAspect / (5 / 4)) * 100}%`
                           : "100%",
                       height:
-                        previewBoxAspect > 5 / 4
-                          ? `${((5 / 4) / previewBoxAspect) * 100}%`
+                        previewAspect > 5 / 4
+                          ? `${((5 / 4) / previewAspect) * 100}%`
                           : "100%",
+                      transform: isCropResult
+                        ? `rotate(${rotation}deg) scale(${previewScale}) scaleX(${transformFields.mirror ? -1 : 1}) scaleY(${transformFields.flip ? -1 : 1})`
+                        : "none",
                     }}
                   >
-                    <Image
-                      src={selectedImage.url}
-                      alt="Preview of the image being transformed"
-                      fill
-                      sizes="(max-width: 760px) 90vw, 50vw"
-                      unoptimized
-                      style={{
-                        objectFit: hasCustomDimensions ? "cover" : "contain",
-                        filter: previewFilter,
-                        transform: cropMode
-                          ? "none"
-                          : `rotate(${rotation}deg) scale(${previewScale}) scaleX(${transformFields.mirror ? -1 : 1}) scaleY(${transformFields.flip ? -1 : 1})`,
-                      }}
-                    />
+                    <div
+                      className="transform-preview-image-canvas"
+                      style={
+                        isCropResult && cropSelection
+                          ? {
+                              left: `${(-cropSelection.x / cropSelection.width) * 100}%`,
+                              top: `${(-cropSelection.y / cropSelection.height) * 100}%`,
+                              width: `${100 / cropSelection.width}%`,
+                              height: `${100 / cropSelection.height}%`,
+                            }
+                          : undefined
+                      }
+                    >
+                      <Image
+                        src={selectedImage.url}
+                        alt="Preview of the image being transformed"
+                        fill
+                        sizes="(max-width: 760px) 90vw, 50vw"
+                        unoptimized
+                        style={{
+                          objectFit: hasCustomDimensions ? "cover" : "contain",
+                          filter: previewFilter,
+                          transform:
+                            cropMode || isCropResult
+                              ? "none"
+                              : `rotate(${rotation}deg) scale(${previewScale}) scaleX(${transformFields.mirror ? -1 : 1}) scaleY(${transformFields.flip ? -1 : 1})`,
+                        }}
+                      />
+                    </div>
                     {cropMode && (
                       <div
                         className="crop-interaction"
@@ -1246,7 +1268,11 @@ export default function Home() {
                       setCropGesture(null);
                     }}
                   >
-                    {cropMode ? "Done cropping" : "Crop photo"}
+                    {cropMode
+                      ? "Done cropping"
+                      : cropSelection
+                        ? "Edit crop"
+                        : "Crop photo"}
                   </button>
                   {cropSelection && cropPixelRect && (
                     <>
@@ -1267,7 +1293,7 @@ export default function Home() {
                   {cropMode
                     ? "Drag inside the frame to draw or move the crop; use a corner to resize it."
                     : cropSelection
-                      ? "Crop area selected. Choose Crop photo to adjust it."
+                      ? "Crop area selected. Choose Edit crop to adjust it."
                       : "Crop the photo directly to choose the exact area to keep."}
                 </p>
               </section>
