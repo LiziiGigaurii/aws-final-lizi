@@ -134,3 +134,9 @@ button:disabled { cursor: not-allowed; opacity: .55; }
   .history-sidebar { padding: 16px 0 0; border-top: 1px solid var(--line); border-left: 0; }
   .history-version-list { max-height: 250px; }
 }
+
+@media (max-width: 600px) {
+  .image-card .image-meta .card-actions { grid-template-columns: minmax(0, 1fr); }
+  .image-card .image-meta .card-actions .card-button { min-height: 44px; font-size: 12px; }
+  .image-card .image-meta .card-actions:not(.has-versions) .card-button.delete { grid-column: 1; }
+}
