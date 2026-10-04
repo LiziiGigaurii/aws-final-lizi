@@ -155,6 +155,10 @@ export default function Home() {
   } | null>(null);
   const [selectedImage, setSelectedImage] = useState<LibraryImage | null>(null);
   const [quality, setQuality] = useState(80);
+  const [compressionPreviewUrl, setCompressionPreviewUrl] = useState("");
+  const [compressionPreviewStatus, setCompressionPreviewStatus] = useState<
+    "idle" | "loading" | "ready" | "lossless" | "unavailable"
+  >("idle");
   const [rotation, setRotation] = useState(0);
   const [cropMode, setCropMode] = useState(false);
   const [cropSelection, setCropSelection] = useState<CropSelection | null>(null);
@@ -181,6 +185,80 @@ export default function Home() {
     setUsername(localStorage.getItem("framehouse_user") || "");
     setReady(true);
   }, []);
+
+  useEffect(() => {
+    const sourceUrl = selectedImage?.url;
+    const outputFormat = (
+      transformFields.format || selectedImage?.metadata?.format || "jpeg"
+    ).toLowerCase();
+
+    if (!sourceUrl) {
+      setCompressionPreviewUrl("");
+      setCompressionPreviewStatus("idle");
+      return;
+    }
+
+    setCompressionPreviewUrl("");
+    if (outputFormat === "png") {
+      setCompressionPreviewStatus("lossless");
+      return;
+    }
+    if (!["jpeg", "jpg", "webp"].includes(outputFormat)) {
+      setCompressionPreviewStatus("unavailable");
+      return;
+    }
+
+    let cancelled = false;
+    let previewUrl = "";
+    setCompressionPreviewStatus("loading");
+    const timeout = window.setTimeout(() => {
+      const image = new window.Image();
+      image.crossOrigin = "anonymous";
+      image.onload = () => {
+        if (cancelled) return;
+        try {
+          const scale = Math.min(
+            1,
+            1600 / Math.max(image.naturalWidth, image.naturalHeight),
+          );
+          const canvas = document.createElement("canvas");
+          canvas.width = Math.max(1, Math.round(image.naturalWidth * scale));
+          canvas.height = Math.max(1, Math.round(image.naturalHeight * scale));
+          const context = canvas.getContext("2d");
+          if (!context) throw new Error("Canvas is unavailable");
+          context.drawImage(image, 0, 0, canvas.width, canvas.height);
+          const mimeType =
+            outputFormat === "webp" ? "image/webp" : "image/jpeg";
+          canvas.toBlob(
+            (blob) => {
+              if (cancelled) return;
+              if (!blob || blob.type !== mimeType) {
+                setCompressionPreviewStatus("unavailable");
+                return;
+              }
+              previewUrl = URL.createObjectURL(blob);
+              setCompressionPreviewUrl(previewUrl);
+              setCompressionPreviewStatus("ready");
+            },
+            mimeType,
+            quality / 100,
+          );
+        } catch {
+          setCompressionPreviewStatus("unavailable");
+        }
+      };
+      image.onerror = () => {
+        if (!cancelled) setCompressionPreviewStatus("unavailable");
+      };
+      image.src = sourceUrl;
+    }, 140);
+
+    return () => {
+      cancelled = true;
+      window.clearTimeout(timeout);
+      if (previewUrl) URL.revokeObjectURL(previewUrl);
+    };
+  }, [quality, selectedImage?.metadata?.format, selectedImage?.url, transformFields.format]);
 
   useEffect(() => {
     if (!ready || !token) return;
@@ -1181,7 +1259,7 @@ export default function Home() {
                       }
                     >
                       <Image
-                        src={selectedImage.url}
+                        src={compressionPreviewUrl || selectedImage.url}
                         alt="Preview of the image being transformed"
                         fill
                         sizes="(max-width: 760px) 90vw, 50vw"
@@ -1255,6 +1333,24 @@ export default function Home() {
                   </span>
                   <span>Quality {quality}%</span>
                 </div>
+                <p
+                  className={`compression-preview-status ${compressionPreviewStatus}`}
+                  role="status"
+                >
+                  {compressionPreviewStatus === "ready"
+                    ? `Live ${(
+                        transformFields.format ||
+                        selectedImage.metadata?.format ||
+                        "jpeg"
+                      ).toUpperCase()} preview at ${quality}% quality`
+                    : compressionPreviewStatus === "loading"
+                      ? `Rendering ${quality}% quality preview…`
+                      : compressionPreviewStatus === "lossless"
+                        ? "PNG is lossless; quality changes file size, not visible detail."
+                        : compressionPreviewStatus === "unavailable"
+                          ? "Live compression preview is unavailable for this image; quality still applies when creating the version."
+                          : "Adjust quality to preview compression."}
+                </p>
                 <div className="crop-tools">
                   <button
                     type="button"

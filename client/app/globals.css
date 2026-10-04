@@ -40,6 +40,9 @@ button:disabled { cursor: not-allowed; opacity: .55; }
 .transform-preview-image-canvas { position: absolute; inset: 0; }
 .transform-preview-stage img { transition: filter .18s ease, transform .18s ease; }
 .transform-preview-details { flex-wrap: wrap; margin-top: 12px; color: var(--muted); font-size: 10px; }
+.compression-preview-status { min-height: 14px; margin-top: 6px; color: var(--muted); font-size: 10px; line-height: 1.4; }
+.compression-preview-status.ready { color: var(--ink-soft); }
+.compression-preview-status.unavailable { color: var(--coral); }
 .transform-form { min-width: 0; margin-top: 0; gap: 16px; }
 .crop-interaction { position: absolute; z-index: 2; inset: 0; overflow: hidden; cursor: crosshair; touch-action: none; user-select: none; }
 .crop-instruction { position: absolute; left: 50%; top: 50%; max-width: calc(100% - 24px); transform: translate(-50%, -50%); padding: 8px 10px; background: rgba(24,33,30,.78); color: #fff; font-size: 11px; text-align: center; pointer-events: none; }
