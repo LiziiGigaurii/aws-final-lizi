@@ -29,6 +29,16 @@ button:disabled { cursor: not-allowed; opacity: .55; }
 .album-count { color: var(--muted); font-size: 12px; }
 .album-arrow { color: var(--coral); text-align: right; }
 .back-to-albums { margin-bottom: 16px; border: 0; background: transparent; color: var(--ink-soft); padding: 4px 0; font-size: 13px; }
+.transform-modal { width: min(1120px, 100%); max-height: calc(100vh - 40px); overflow-y: auto; padding: 34px; }
+.transform-layout { display: grid; grid-template-columns: minmax(0, 1.05fr) minmax(320px, .95fr); align-items: start; gap: 28px; margin-top: 26px; }
+.transform-preview-panel { position: sticky; top: 0; min-width: 0; padding: 14px; border: 1px solid var(--line); background: var(--card); }
+.transform-preview-heading, .transform-preview-details { display: flex; align-items: center; justify-content: space-between; gap: 10px; }
+.transform-preview-heading { margin-bottom: 12px; color: var(--ink); font-size: 12px; font-weight: 700; }
+.transform-preview-heading span + span { color: var(--muted); font-size: 10px; font-weight: 500; text-align: right; }
+.transform-preview-stage { position: relative; width: 100%; aspect-ratio: 5 / 4; overflow: hidden; background-color: #e8e8e0; background-image: linear-gradient(45deg, #d9dbd2 25%, transparent 25%), linear-gradient(-45deg, #d9dbd2 25%, transparent 25%), linear-gradient(45deg, transparent 75%, #d9dbd2 75%), linear-gradient(-45deg, transparent 75%, #d9dbd2 75%); background-position: 0 0, 0 8px, 8px -8px, -8px 0; background-size: 16px 16px; }
+.transform-preview-stage img { transition: filter .18s ease, transform .18s ease; }
+.transform-preview-details { flex-wrap: wrap; margin-top: 12px; color: var(--muted); font-size: 10px; }
+.transform-form { min-width: 0; margin-top: 0; gap: 16px; }
 
 @media (min-width: 761px) {
   .auth-shell { grid-template-columns: 1.12fr .88fr; }
@@ -43,4 +53,12 @@ button:disabled { cursor: not-allowed; opacity: .55; }
   .top-actions { flex-wrap: wrap; }
   .album-row { grid-template-columns: 36px minmax(0,1fr) auto; gap: 10px; padding: 10px; }
   .album-arrow { display: none; }
+}
+
+@media (max-width: 760px) {
+  .modal-backdrop { align-items: start; overflow-y: auto; }
+  .transform-modal { padding: 30px 20px 22px; }
+  .transform-layout { grid-template-columns: minmax(0, 1fr); gap: 20px; }
+  .transform-preview-panel { position: static; }
+  .transform-preview-stage { aspect-ratio: 4 / 3; }
 }

@@ -443,6 +443,37 @@ export default function Home() {
     fileInput.current?.click();
   }
 
+  const previewLookFilters: Record<string, string> = {
+    warm: "sepia(0.22) saturate(1.15)",
+    cool: "hue-rotate(12deg) saturate(0.9)",
+    vintage: "sepia(0.3) saturate(0.8) contrast(0.95)",
+    vivid: "saturate(1.45)",
+    fade: "saturate(0.7) contrast(0.9) brightness(1.04)",
+  };
+  const previewFilter = [
+    transformFields.grayscale ? "grayscale(1)" : "",
+    transformFields.sepia ? "sepia(1)" : "",
+    previewLookFilters[transformFields.color] || "",
+  ]
+    .filter(Boolean)
+    .join(" ") || "none";
+  const previewRadians = (rotation * Math.PI) / 180;
+  const previewCosine = Math.abs(Math.cos(previewRadians));
+  const previewSine = Math.abs(Math.sin(previewRadians));
+  const previewScale = Math.min(
+    1,
+    1 / (previewCosine + previewSine / (5 / 4)),
+    1 / (previewCosine + previewSine * (5 / 4)),
+  );
+  const hasCustomDimensions =
+    Number(transformFields.width) > 0 && Number(transformFields.height) > 0;
+  const previewWidth = hasCustomDimensions
+    ? Number(transformFields.width)
+    : selectedImage?.metadata?.width;
+  const previewHeight = hasCustomDimensions
+    ? Number(transformFields.height)
+    : selectedImage?.metadata?.height;
+
   if (!ready) return null;
 
   return (
@@ -912,7 +943,7 @@ export default function Home() {
           }}
         >
           <section
-            className="modal"
+            className="modal transform-modal"
             role="dialog"
             aria-modal="true"
             aria-labelledby="transformTitle"
@@ -933,7 +964,41 @@ export default function Home() {
                 S3 asset.
               </p>
             </div>
-            <form className="transform-form" onSubmit={handleTransform}>
+            <div className="transform-layout">
+              <section className="transform-preview-panel" aria-label="Image preview">
+                <div className="transform-preview-heading">
+                  <span>Live preview</span>
+                  <span>Original stays unchanged</span>
+                </div>
+                <div className="transform-preview-stage">
+                  <Image
+                    src={selectedImage.url}
+                    alt="Preview of the image being transformed"
+                    fill
+                    sizes="(max-width: 760px) 90vw, 50vw"
+                    unoptimized
+                    style={{
+                      objectFit: "contain",
+                      filter: previewFilter,
+                      transform: `rotate(${rotation}deg) scale(${previewScale}) scaleX(${transformFields.mirror ? -1 : 1}) scaleY(${transformFields.flip ? -1 : 1})`,
+                    }}
+                  />
+                </div>
+                <div className="transform-preview-details">
+                  <span>
+                    {previewWidth && previewHeight
+                      ? `${previewWidth} × ${previewHeight} px`
+                      : "Original dimensions"}
+                  </span>
+                  <span>
+                    {transformFields.format
+                      ? transformFields.format.toUpperCase()
+                      : "Original format"}
+                  </span>
+                  <span>Quality {quality}%</span>
+                </div>
+              </section>
+              <form className="transform-form" onSubmit={handleTransform}>
               <div className="control-group">
                 <label className="field">
                   <span>Width</span>
@@ -1074,7 +1139,8 @@ export default function Home() {
                   : "Create transformed version"}{" "}
                 <span>↗</span>
               </button>
-            </form>
+              </form>
+            </div>
           </section>
         </div>
       )}
