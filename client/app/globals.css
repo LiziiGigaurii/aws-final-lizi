@@ -35,7 +35,8 @@ button:disabled { cursor: not-allowed; opacity: .55; }
 .transform-preview-heading, .transform-preview-details { display: flex; align-items: center; justify-content: space-between; gap: 10px; }
 .transform-preview-heading { margin-bottom: 12px; color: var(--ink); font-size: 12px; font-weight: 700; }
 .transform-preview-heading span + span { color: var(--muted); font-size: 10px; font-weight: 500; text-align: right; }
-.transform-preview-stage { position: relative; width: 100%; aspect-ratio: 5 / 4; overflow: hidden; background-color: #e8e8e0; background-image: linear-gradient(45deg, #d9dbd2 25%, transparent 25%), linear-gradient(-45deg, #d9dbd2 25%, transparent 25%), linear-gradient(45deg, transparent 75%, #d9dbd2 75%), linear-gradient(-45deg, transparent 75%, #d9dbd2 75%); background-position: 0 0, 0 8px, 8px -8px, -8px 0; background-size: 16px 16px; }
+.transform-preview-stage { position: relative; display: grid; place-items: center; width: 100%; aspect-ratio: 5 / 4; overflow: hidden; background-color: #e8e8e0; background-image: linear-gradient(45deg, #d9dbd2 25%, transparent 25%), linear-gradient(-45deg, #d9dbd2 25%, transparent 25%), linear-gradient(45deg, transparent 75%, #d9dbd2 75%), linear-gradient(-45deg, transparent 75%, #d9dbd2 75%); background-position: 0 0, 0 8px, 8px -8px, -8px 0; background-size: 16px 16px; }
+.transform-preview-frame { position: relative; max-width: 100%; max-height: 100%; overflow: hidden; }
 .transform-preview-stage img { transition: filter .18s ease, transform .18s ease; }
 .transform-preview-details { flex-wrap: wrap; margin-top: 12px; color: var(--muted); font-size: 10px; }
 .transform-form { min-width: 0; margin-top: 0; gap: 16px; }

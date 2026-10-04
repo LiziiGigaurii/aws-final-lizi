@@ -457,16 +457,19 @@ export default function Home() {
   ]
     .filter(Boolean)
     .join(" ") || "none";
+  const hasCustomDimensions =
+    Number(transformFields.width) > 0 && Number(transformFields.height) > 0;
   const previewRadians = (rotation * Math.PI) / 180;
   const previewCosine = Math.abs(Math.cos(previewRadians));
   const previewSine = Math.abs(Math.sin(previewRadians));
+  const previewBoxAspect = hasCustomDimensions
+    ? Number(transformFields.width) / Number(transformFields.height)
+    : 5 / 4;
   const previewScale = Math.min(
     1,
-    1 / (previewCosine + previewSine / (5 / 4)),
-    1 / (previewCosine + previewSine * (5 / 4)),
+    1 / (previewCosine + previewSine / previewBoxAspect),
+    1 / (previewCosine + previewSine * previewBoxAspect),
   );
-  const hasCustomDimensions =
-    Number(transformFields.width) > 0 && Number(transformFields.height) > 0;
   const previewWidth = hasCustomDimensions
     ? Number(transformFields.width)
     : selectedImage?.metadata?.width;
@@ -971,18 +974,32 @@ export default function Home() {
                   <span>Original stays unchanged</span>
                 </div>
                 <div className="transform-preview-stage">
-                  <Image
-                    src={selectedImage.url}
-                    alt="Preview of the image being transformed"
-                    fill
-                    sizes="(max-width: 760px) 90vw, 50vw"
-                    unoptimized
+                  <div
+                    className="transform-preview-frame"
                     style={{
-                      objectFit: "contain",
-                      filter: previewFilter,
-                      transform: `rotate(${rotation}deg) scale(${previewScale}) scaleX(${transformFields.mirror ? -1 : 1}) scaleY(${transformFields.flip ? -1 : 1})`,
+                      width:
+                        hasCustomDimensions && previewBoxAspect < 5 / 4
+                          ? `${(previewBoxAspect / (5 / 4)) * 100}%`
+                          : "100%",
+                      height:
+                        hasCustomDimensions && previewBoxAspect > 5 / 4
+                          ? `${((5 / 4) / previewBoxAspect) * 100}%`
+                          : "100%",
                     }}
-                  />
+                  >
+                    <Image
+                      src={selectedImage.url}
+                      alt="Preview of the image being transformed"
+                      fill
+                      sizes="(max-width: 760px) 90vw, 50vw"
+                      unoptimized
+                      style={{
+                        objectFit: hasCustomDimensions ? "cover" : "contain",
+                        filter: previewFilter,
+                        transform: `rotate(${rotation}deg) scale(${previewScale}) scaleX(${transformFields.mirror ? -1 : 1}) scaleY(${transformFields.flip ? -1 : 1})`,
+                      }}
+                    />
+                  </div>
                 </div>
                 <div className="transform-preview-details">
                   <span>
