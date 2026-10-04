@@ -117,3 +117,17 @@ export class TransformImageDto {
   @Type(() => CompressDto)
   compress?: CompressDto;
 }
+
+export class CompressionPreviewDto {
+  @ApiProperty({ minimum: 1, maximum: 100, example: 60 })
+  @IsInt()
+  @Min(1)
+  @Max(100)
+  quality: number;
+
+  @ApiPropertyOptional({ enum: ['jpeg', 'jpg', 'png', 'webp'] })
+  @IsOptional()
+  @IsString()
+  @IsIn(['jpeg', 'jpg', 'png', 'webp'])
+  format?: string;
+}

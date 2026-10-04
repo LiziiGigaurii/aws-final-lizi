@@ -4,11 +4,13 @@ import {
   Controller,
   Delete,
   Get,
+  Header,
   Param,
   Patch,
   Post,
   Query,
   Request,
+  StreamableFile,
   UploadedFile,
   UseGuards,
   UseInterceptors,
@@ -18,7 +20,10 @@ import { Throttle, ThrottlerGuard } from '@nestjs/throttler';
 import 'multer';
 import type { Express, Request as ExpressRequest } from 'express';
 import { AuthGuard } from '../auth/guards/auth.guard';
-import { TransformImageDto } from './dto/transform-image.dto';
+import {
+  CompressionPreviewDto,
+  TransformImageDto,
+} from './dto/transform-image.dto';
 import { ImagesService } from './images.service';
 import {
   ApiBearerAuth,
@@ -64,6 +69,27 @@ export class ImagesController {
     }
 
     return this.imagesService.create(file, req.userId);
+  }
+
+  @UseGuards(AuthGuard)
+  @Post(':id/compression-preview')
+  @Header('Cache-Control', 'no-store')
+  @ApiOperation({ summary: 'Preview image compression without saving a version' })
+  async previewCompression(
+    @Param('id') id: string,
+    @Request() req: AuthenticatedRequest,
+    @Body() compression: CompressionPreviewDto,
+  ) {
+    if (!req.userId) {
+      throw new BadRequestException('მომხმარებელი ვერ განისაზღვრა');
+    }
+
+    const preview = await this.imagesService.previewCompression(
+      id,
+      req.userId,
+      compression,
+    );
+    return new StreamableFile(preview.buffer, { type: preview.mimeType });
   }
 
   @UseGuards(AuthGuard)

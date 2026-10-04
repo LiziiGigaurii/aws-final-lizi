@@ -156,8 +156,9 @@ export default function Home() {
   const [selectedImage, setSelectedImage] = useState<LibraryImage | null>(null);
   const [quality, setQuality] = useState(80);
   const [compressionPreviewUrl, setCompressionPreviewUrl] = useState("");
+  const [compressionPreviewBytes, setCompressionPreviewBytes] = useState(0);
   const [compressionPreviewStatus, setCompressionPreviewStatus] = useState<
-    "idle" | "loading" | "ready" | "lossless" | "unavailable"
+    "idle" | "loading" | "ready" | "unavailable"
   >("idle");
   const [rotation, setRotation] = useState(0);
   const [cropMode, setCropMode] = useState(false);
@@ -187,78 +188,67 @@ export default function Home() {
   }, []);
 
   useEffect(() => {
-    const sourceUrl = selectedImage?.url;
+    const imageId = selectedImage?.id;
     const outputFormat = (
       transformFields.format || selectedImage?.metadata?.format || "jpeg"
     ).toLowerCase();
 
-    if (!sourceUrl) {
+    if (!imageId || !token) {
       setCompressionPreviewUrl("");
       setCompressionPreviewStatus("idle");
       return;
     }
 
     setCompressionPreviewUrl("");
-    if (outputFormat === "png") {
-      setCompressionPreviewStatus("lossless");
-      return;
-    }
-    if (!["jpeg", "jpg", "webp"].includes(outputFormat)) {
+    setCompressionPreviewBytes(0);
+    if (!["jpeg", "jpg", "png", "webp"].includes(outputFormat)) {
       setCompressionPreviewStatus("unavailable");
       return;
     }
 
     let cancelled = false;
     let previewUrl = "";
+    const controller = new AbortController();
     setCompressionPreviewStatus("loading");
     const timeout = window.setTimeout(() => {
-      const image = new window.Image();
-      image.crossOrigin = "anonymous";
-      image.onload = () => {
-        if (cancelled) return;
-        try {
-          const scale = Math.min(
-            1,
-            1600 / Math.max(image.naturalWidth, image.naturalHeight),
-          );
-          const canvas = document.createElement("canvas");
-          canvas.width = Math.max(1, Math.round(image.naturalWidth * scale));
-          canvas.height = Math.max(1, Math.round(image.naturalHeight * scale));
-          const context = canvas.getContext("2d");
-          if (!context) throw new Error("Canvas is unavailable");
-          context.drawImage(image, 0, 0, canvas.width, canvas.height);
-          const mimeType =
-            outputFormat === "webp" ? "image/webp" : "image/jpeg";
-          canvas.toBlob(
-            (blob) => {
-              if (cancelled) return;
-              if (!blob || blob.type !== mimeType) {
-                setCompressionPreviewStatus("unavailable");
-                return;
-              }
-              previewUrl = URL.createObjectURL(blob);
-              setCompressionPreviewUrl(previewUrl);
-              setCompressionPreviewStatus("ready");
-            },
-            mimeType,
-            quality / 100,
-          );
-        } catch {
-          setCompressionPreviewStatus("unavailable");
-        }
-      };
-      image.onerror = () => {
-        if (!cancelled) setCompressionPreviewStatus("unavailable");
-      };
-      image.src = sourceUrl;
-    }, 140);
+      void fetch(`/images/${imageId}/compression-preview`, {
+        method: "POST",
+        headers: {
+          Authorization: `Bearer ${token}`,
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({ quality, format: outputFormat }),
+        signal: controller.signal,
+      })
+        .then((response) => {
+          if (!response.ok) throw new Error("Compression preview failed");
+          return response.blob();
+        })
+        .then((blob) => {
+          if (cancelled) return;
+          if (!blob.size) throw new Error("Compression preview was empty");
+          previewUrl = URL.createObjectURL(blob);
+          setCompressionPreviewUrl(previewUrl);
+          setCompressionPreviewBytes(blob.size);
+          setCompressionPreviewStatus("ready");
+        })
+        .catch((error: unknown) => {
+          if (
+            !cancelled &&
+            !(error instanceof DOMException && error.name === "AbortError")
+          ) {
+            setCompressionPreviewStatus("unavailable");
+          }
+        });
+    }, 180);
 
     return () => {
       cancelled = true;
       window.clearTimeout(timeout);
+      controller.abort();
       if (previewUrl) URL.revokeObjectURL(previewUrl);
     };
-  }, [quality, selectedImage?.metadata?.format, selectedImage?.url, transformFields.format]);
+  }, [quality, selectedImage?.id, selectedImage?.metadata?.format, token, transformFields.format]);
 
   useEffect(() => {
     if (!ready || !token) return;
@@ -1342,14 +1332,12 @@ export default function Home() {
                         transformFields.format ||
                         selectedImage.metadata?.format ||
                         "jpeg"
-                      ).toUpperCase()} preview at ${quality}% quality`
+                      ).toUpperCase()} preview · ${formatBytes(compressionPreviewBytes)} · ${quality}% quality`
                     : compressionPreviewStatus === "loading"
                       ? `Rendering ${quality}% quality preview…`
-                      : compressionPreviewStatus === "lossless"
-                        ? "PNG is lossless; quality changes file size, not visible detail."
-                        : compressionPreviewStatus === "unavailable"
-                          ? "Live compression preview is unavailable for this image; quality still applies when creating the version."
-                          : "Adjust quality to preview compression."}
+                      : compressionPreviewStatus === "unavailable"
+                        ? "Live compression preview failed; quality still applies when creating the version."
+                        : "Adjust quality to preview compression."}
                 </p>
                 <div className="crop-tools">
                   <button

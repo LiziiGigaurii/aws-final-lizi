@@ -12,7 +12,10 @@ import type { FormatEnum } from 'sharp';
 import 'multer';
 import type { Express } from 'express';
 import { StorageService } from '../storage/storage.service';
-import type { TransformImageDto } from './dto/transform-image.dto';
+import type {
+	CompressionPreviewDto,
+	TransformImageDto,
+} from './dto/transform-image.dto';
 import { Album, AlbumDocument } from './schemas/albums.schema';
 import { Image, ImageDocument } from './schemas/images.schema';
 
@@ -192,6 +195,8 @@ export class ImagesService {
 					image.jpeg({ quality: transformations.compress.quality });
 				} else if (normalizedFormat === 'png') {
 					image.png({ quality: transformations.compress.quality });
+				} else if (normalizedFormat === 'webp') {
+					image.webp({ quality: transformations.compress.quality });
 				}
 			}
 
@@ -246,6 +251,49 @@ export class ImagesService {
 				'სურათის ტრანსფორმაცია ვერ მოხერხდა. შეამოწმე server terminal-ის log.',
 			);
 		}
+	}
+
+	async previewCompression(
+		imageId: string,
+		ownerId: string,
+		compression: CompressionPreviewDto,
+	) {
+		this.validateObjectIds(imageId, ownerId);
+
+		const imageDocument = await this.imageModel.findOne({
+			_id: imageId,
+			owner: new Types.ObjectId(ownerId),
+		});
+
+		if (!imageDocument) {
+			throw new NotFoundException('სურათი ვერ მოიძებნა');
+		}
+
+		const inputBuffer = await this.storageService.downloadFile(
+			imageDocument.originalKey,
+		);
+		const format = compression.format ?? imageDocument.format ?? 'jpeg';
+		const normalizedFormat = format === 'jpg' ? 'jpeg' : format;
+		const image = sharp(inputBuffer);
+
+		switch (normalizedFormat) {
+			case 'jpeg':
+				image.jpeg({ quality: compression.quality });
+				break;
+			case 'png':
+				image.png({ quality: compression.quality });
+				break;
+			case 'webp':
+				image.webp({ quality: compression.quality });
+				break;
+			default:
+				throw new BadRequestException(
+					'Compression preview supports JPEG, PNG, and WebP',
+				);
+		}
+
+		const buffer = await image.toBuffer();
+		return { buffer, mimeType: this.getMimeType(normalizedFormat) };
 	}
 
 	async findOne(imageId: string, ownerId: string) {
