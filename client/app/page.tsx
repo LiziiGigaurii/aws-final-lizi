@@ -1239,7 +1239,9 @@ export default function Home() {
                           {image.metadata?.height || "—"} px ·{" "}
                           {formatBytes(image.metadata?.size)}
                         </p>
-                        <div className="card-actions">
+                        <div
+                          className={`card-actions${transformedUrls.length ? " has-versions" : ""}`}
+                        >
                           <button
                             className="card-button"
                             onClick={() => openTransform(image)}
@@ -1266,7 +1268,7 @@ export default function Home() {
                             >
                               {showingOriginal
                                 ? "Show latest"
-                                : "Revert to original"}
+                                : "Show original"}
                             </button>
                           )}
                           <button
@@ -1772,7 +1774,15 @@ export default function Home() {
                     className={`history-version${activeHistoryVersionId === "original" ? " active" : ""}`}
                     onClick={() => setActiveHistoryVersionId("original")}
                   >
-                    <span className="history-version-mark">O</span>
+                    <span className="history-version-thumb">
+                      <Image
+                        src={historyImage.url}
+                        alt=""
+                        fill
+                        sizes="56px"
+                        unoptimized
+                      />
+                    </span>
                     <span className="history-version-copy">
                       <strong>Original</strong>
                       <small>Uploaded source</small>
@@ -1784,21 +1794,27 @@ export default function Home() {
                       className={`history-version${activeHistoryVersionId === version.id ? " active" : ""}`}
                       onClick={() => setActiveHistoryVersionId(version.id)}
                     >
-                      <span className="history-version-mark">
-                        {String(version.version).padStart(2, "0")}
+                      <span className="history-version-thumb">
+                        <Image
+                          src={version.url}
+                          alt=""
+                          fill
+                          sizes="56px"
+                          unoptimized
+                        />
                       </span>
                       <span className="history-version-copy">
                         <strong>Version {version.version}</strong>
                         <small>
                           {version.settings
-                            ? describeTransformSettings(version.settings)[0]
+                            ? describeTransformSettings(version.settings).join(" · ")
                             : "Earlier edit · details unavailable"}
                         </small>
-                      </span>
-                      <span className="history-version-date">
-                        {version.createdAt
-                          ? new Date(version.createdAt).toLocaleDateString()
-                          : "Legacy"}
+                        <time>
+                          {version.createdAt
+                            ? new Date(version.createdAt).toLocaleString()
+                            : "Legacy edit"}
+                        </time>
                       </span>
                     </button>
                   ))}
