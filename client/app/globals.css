@@ -183,9 +183,12 @@ button:disabled { cursor: not-allowed; opacity: .55; }
 .chat-read-receipt { display: block; margin-top: 4px; color: var(--muted); font-size: 9px; font-weight: 700; text-align: right; }
 .chat-shared-images { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 6px; width: min(100%, 360px); margin-top: 8px; }
 .chat-shared-images.is-single { grid-template-columns: minmax(0, 1fr); width: min(100%, 280px); }
-.chat-shared-image-button { display: grid; place-items: center; width: 100%; aspect-ratio: 1; overflow: hidden; padding: 0; border: 0; border-radius: 10px; background: #18211e; cursor: zoom-in; }
+.chat-shared-image-button { position: relative; display: grid; place-items: center; width: 100%; aspect-ratio: 1; overflow: hidden; padding: 0; border: 0; border-radius: 10px; background: #18211e; cursor: zoom-in; }
 .chat-shared-images.is-single .chat-shared-image-button { aspect-ratio: 4 / 3; border-radius: 13px; }
 .chat-shared-image { display: block; width: 100%; height: 100%; margin: 0; object-fit: contain; }
+.chat-shared-image-more img { opacity: .6; }
+.chat-shared-image-more-count { position: absolute; inset: 0; display: grid; place-items: center; background: rgba(24,33,30,.48); color: #fff; font: 600 26px 'Space Grotesk',sans-serif; }
+.chat-shared-image-more:not(:has(img)) { color: #fff; font: 600 26px 'Space Grotesk',sans-serif; }
 .chat-image-unavailable { display: grid; place-items: center; aspect-ratio: 1; border-radius: 10px; background: #f5dedf; color: #a74452; font-size: 10px; text-align: center; }
 .chat-image-error { margin-top: 8px !important; color: #a74452; font-size: 11px !important; }
 .chat-error-banner { flex: 0 0 auto; padding: 7px 18px 0; background: var(--card); color: #a74452; font-size: 11px; }
@@ -211,6 +214,12 @@ button:disabled { cursor: not-allowed; opacity: .55; }
 .shared-photo-dialog h2 { margin-top: 8px; color: var(--ink); font: 600 23px 'Space Grotesk',sans-serif; }
 .shared-photo-dialog-image { display: block; width: 100%; height: min(48vh, 360px); margin: 18px 0; background: #18211e; object-fit: contain; }
 .shared-photo-dialog .action-dialog-actions { margin-top: 0; }
+.chat-gallery-dialog { position: relative; display: flex; flex-direction: column; width: min(920px, 100%); max-height: calc(100vh - 32px); overflow: hidden; padding: 28px; background: var(--paper); box-shadow: 0 24px 70px rgba(0,0,0,.24); }
+.chat-gallery-dialog h2 { flex: 0 0 auto; margin: 8px 0 20px; color: var(--ink); font: 600 23px 'Space Grotesk',sans-serif; }
+.chat-gallery-grid { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 10px; min-height: 0; overflow-y: auto; }
+.chat-gallery-image-button { position: relative; display: block; width: 100%; aspect-ratio: 1; overflow: hidden; padding: 0; border: 0; border-radius: 10px; background: #18211e; }
+.chat-gallery-image-button img { display: block; width: 100%; height: 100%; object-fit: contain; }
+.chat-gallery-image-button > span { position: absolute; right: 8px; bottom: 8px; display: grid; place-items: center; width: 24px; height: 24px; border-radius: 50%; background: rgba(24,33,30,.7); color: #fff; font-size: 10px; }
 
 @media (max-width: 760px) {
   .chat-workspace { height: 100dvh; min-height: 100dvh; padding: 18px 14px 12px; }
@@ -233,6 +242,8 @@ button:disabled { cursor: not-allowed; opacity: .55; }
   .chat-message-bubble:has(.chat-shared-images) { max-width: min(88%, 260px); }
   .shared-photo-dialog { padding: 24px 20px; }
   .shared-photo-dialog-image { height: min(42vh, 300px); }
+  .chat-gallery-dialog { padding: 24px 18px; }
+  .chat-gallery-grid { grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 7px; }
   .chat-composer { grid-template-columns: minmax(0, 1fr) auto; gap: 8px; padding: 10px; }
   .chat-attach-tools { grid-column: 1 / -1; }
   .chat-attachment-preview { padding-right: 10px; padding-left: 10px; }
@@ -282,4 +293,8 @@ button:disabled { cursor: not-allowed; opacity: .55; }
   .action-dialog { padding: 24px 20px; }
   .action-dialog-actions { flex-direction: column-reverse; }
   .action-dialog-actions .button, .action-cancel-button, .delete-confirm-button { width: 100%; }
+}
+
+@media (max-width: 480px) {
+  .chat-gallery-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
 }

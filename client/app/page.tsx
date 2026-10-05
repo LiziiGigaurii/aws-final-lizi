@@ -367,6 +367,10 @@ export default function Home() {
     imageIndex: number;
     url: string;
   } | null>(null);
+  const [selectedChatGallery, setSelectedChatGallery] = useState<{
+    messageId: string;
+    imageUrls: string[];
+  } | null>(null);
   const [chatImageActionBusy, setChatImageActionBusy] = useState(false);
   const [chatInput, setChatInput] = useState("");
   const [chatAttachments, setChatAttachments] = useState<ChatAttachment[]>([]);
@@ -1724,24 +1728,47 @@ export default function Home() {
                               {message.text && <p>{message.text}</p>}
                               {message.imageUrls && message.imageUrls.length > 0 && (
                                 <div className={`chat-shared-images${message.imageUrls.length === 1 ? " is-single" : ""}`}>
-                                  {message.imageUrls.map((imageUrl, imageIndex) => {
+                                  {message.imageUrls.slice(0, 4).map((imageUrl, imageIndex) => {
                                     const imageErrorKey = `${message.id}:${imageIndex}`;
+                                    const isMoreTile =
+                                      imageIndex === 3 && message.imageUrls!.length > 4;
                                     return chatImageErrors.has(imageErrorKey) ? (
-                                      <span className="chat-image-unavailable" key={imageErrorKey}>
-                                        Photo unavailable
-                                      </span>
+                                      isMoreTile ? (
+                                        <button
+                                          className="chat-shared-image-button chat-shared-image-more"
+                                          key={imageErrorKey}
+                                          type="button"
+                                          onClick={() =>
+                                            setSelectedChatGallery({
+                                              messageId: message.id,
+                                              imageUrls: message.imageUrls!,
+                                            })
+                                          }
+                                        >
+                                          4+
+                                        </button>
+                                      ) : (
+                                        <span className="chat-image-unavailable" key={imageErrorKey}>
+                                          Photo unavailable
+                                        </span>
+                                      )
                                     ) : (
                                       <button
                                         type="button"
-                                        className="chat-shared-image-button"
+                                        className={`chat-shared-image-button${isMoreTile ? " chat-shared-image-more" : ""}`}
                                         key={imageErrorKey}
-                                        aria-label={`Open shared photo ${imageIndex + 1} actions`}
+                                        aria-label={isMoreTile ? `Open all ${message.imageUrls!.length} shared photos` : `Open shared photo ${imageIndex + 1} actions`}
                                         onClick={() =>
-                                          setSelectedChatImage({
-                                            messageId: message.id,
-                                            imageIndex,
-                                            url: imageUrl,
-                                          })
+                                          isMoreTile
+                                            ? setSelectedChatGallery({
+                                                messageId: message.id,
+                                                imageUrls: message.imageUrls!,
+                                              })
+                                            : setSelectedChatImage({
+                                                messageId: message.id,
+                                                imageIndex,
+                                                url: imageUrl,
+                                              })
                                         }
                                       >
                                         {/* eslint-disable-next-line @next/next/no-img-element */}
@@ -1756,6 +1783,11 @@ export default function Home() {
                                             chatMessagesEndRef.current?.scrollIntoView({ block: "end" })
                                           }
                                         />
+                                        {isMoreTile && (
+                                          <span className="chat-shared-image-more-count">
+                                            4+
+                                          </span>
+                                        )}
                                       </button>
                                     );
                                   })}
@@ -2212,6 +2244,72 @@ export default function Home() {
             )}
           </section>
         </main>
+      )}
+
+      {selectedChatGallery && (
+        <div
+          className="modal-backdrop action-modal-backdrop shared-photo-backdrop"
+          onMouseDown={(event) => {
+            if (event.target === event.currentTarget) setSelectedChatGallery(null);
+          }}
+        >
+          <section
+            className="chat-gallery-dialog"
+            role="dialog"
+            aria-modal="true"
+            aria-labelledby="chatGalleryTitle"
+          >
+            <button
+              className="modal-close"
+              type="button"
+              aria-label="Close photo gallery"
+              onClick={() => setSelectedChatGallery(null)}
+            >
+              ×
+            </button>
+            <span className="eyebrow">SHARED ALBUM</span>
+            <h2 id="chatGalleryTitle">{selectedChatGallery.imageUrls.length} photos</h2>
+            <div className="chat-gallery-grid">
+              {selectedChatGallery.imageUrls.map((imageUrl, imageIndex) => {
+                const imageErrorKey = `${selectedChatGallery.messageId}:${imageIndex}`;
+                return chatImageErrors.has(imageErrorKey) ? (
+                  <span className="chat-image-unavailable" key={imageErrorKey}>
+                    Photo unavailable
+                  </span>
+                ) : (
+                  <button
+                    className="chat-gallery-image-button"
+                    key={imageErrorKey}
+                    type="button"
+                    aria-label={`Open photo ${imageIndex + 1} actions`}
+                    onClick={() => {
+                      setSelectedChatImage({
+                        messageId: selectedChatGallery.messageId,
+                        imageIndex,
+                        url: imageUrl,
+                      });
+                      setSelectedChatGallery(null);
+                    }}
+                  >
+                    {/* eslint-disable-next-line @next/next/no-img-element */}
+                    <img
+                      src={imageUrl}
+                      alt={`Shared photo ${imageIndex + 1}`}
+                      onError={() =>
+                        void refreshChatImage(
+                          selectedChatGallery.messageId,
+                          imageIndex,
+                          imageUrl,
+                        )
+                      }
+                    />
+                    <span>{imageIndex + 1}</span>
+                  </button>
+                );
+              })}
+            </div>
+          </section>
+        </div>
       )}
 
       {selectedChatImage && (
