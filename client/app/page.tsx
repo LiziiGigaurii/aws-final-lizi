@@ -79,6 +79,7 @@ type ChatApiMessage = {
   createdAt?: string;
   isRead?: boolean;
   readAt?: string;
+  unreadCount?: number;
 };
 
 type ChatConversation = {
@@ -86,6 +87,7 @@ type ChatConversation = {
   username: string;
   preview: string;
   createdAt?: string;
+  unreadCount: number;
 };
 
 function chatUserId(user: ChatUserRef) {
@@ -111,6 +113,18 @@ function mapChatMessage(message: ChatApiMessage, currentUserId: string) {
     createdAt: message.createdAt,
     isRead: message.isRead,
     readAt: message.readAt,
+  };
+}
+
+function mapChatConversation(message: ChatApiMessage, currentUserId: string): ChatConversation {
+  const senderIsCurrentUser = chatUserId(message.sender) === currentUserId;
+  const peer = senderIsCurrentUser ? message.receiver : message.sender;
+  return {
+    userId: chatUserId(peer),
+    username: chatUserName(peer) || "User",
+    preview: message.text || (message.imageId ? "Shared a photo" : "New message"),
+    createdAt: message.createdAt,
+    unreadCount: message.unreadCount ?? 0,
   };
 }
 
@@ -319,6 +333,11 @@ export default function Home() {
   >([]);
   const [chatImageErrors, setChatImageErrors] = useState<Set<string>>(new Set());
   const [chatConversations, setChatConversations] = useState<ChatConversation[]>([]);
+  const [selectedChatImage, setSelectedChatImage] = useState<{
+    messageId: string;
+    url: string;
+  } | null>(null);
+  const [chatImageActionBusy, setChatImageActionBusy] = useState(false);
   const [chatInput, setChatInput] = useState("");
   const [chatAttachment, setChatAttachment] = useState<{
     id: string;
@@ -431,15 +450,14 @@ export default function Home() {
       void apiRequest<ChatApiMessage[]>("/chat/conversations", token)
         .then((latestMessages) => {
           setChatConversations(
-            latestMessages.map((latest) => {
-              const peer = chatUserId(latest.sender) === userId ? latest.receiver : latest.sender;
-              return {
-                userId: chatUserId(peer),
-                username: chatUserName(peer) || "User",
-                preview: latest.text || (latest.imageId ? "Shared a photo" : "New message"),
-                createdAt: latest.createdAt,
-              };
-            }).filter((conversation) => conversation.userId),
+            latestMessages
+              .map((latest) => mapChatConversation(latest, userId))
+              .map((conversation) =>
+                belongsToOpenConversation && senderId !== userId && conversation.userId === senderId
+                  ? { ...conversation, unreadCount: 0 }
+                  : conversation,
+              )
+              .filter((conversation) => conversation.userId),
           );
         })
         .catch(() => undefined);
@@ -478,21 +496,15 @@ export default function Home() {
   }, [ready, token, currentUserId]);
 
   useEffect(() => {
-    if (!ready || !token || activeTab !== "chat") return;
+    if (!ready || !token) return;
     let cancelled = false;
     void apiRequest<ChatApiMessage[]>("/chat/conversations", token)
       .then((latestMessages) => {
         if (cancelled) return;
         setChatConversations(
-          latestMessages.map((latest) => {
-            const peer = chatUserId(latest.sender) === currentUserId ? latest.receiver : latest.sender;
-            return {
-              userId: chatUserId(peer),
-              username: chatUserName(peer) || "User",
-              preview: latest.text || (latest.imageId ? "Shared a photo" : "No messages yet"),
-              createdAt: latest.createdAt,
-            };
-          }).filter((conversation) => conversation.userId),
+          latestMessages
+            .map((latest) => mapChatConversation(latest, currentUserId))
+            .filter((conversation) => conversation.userId),
         );
       })
       .catch((error) => {
@@ -501,7 +513,7 @@ export default function Home() {
     return () => {
       cancelled = true;
     };
-  }, [activeTab, currentUserId, ready, token]);
+  }, [currentUserId, ready, token]);
 
   useEffect(() => {
     chatMessagesEndRef.current?.scrollIntoView({ behavior: "smooth", block: "end" });
@@ -1242,6 +1254,57 @@ export default function Home() {
     }
   };
 
+  const fetchSharedChatImage = async (messageId: string) => {
+    const response = await fetch(
+      `${API_URL}/chat/messages/${encodeURIComponent(messageId)}/image`,
+      { headers: { Authorization: `Bearer ${token}` } },
+    );
+    if (!response.ok) {
+      throw new Error("Unable to retrieve this shared photo.");
+    }
+
+    const blob = await response.blob();
+    const disposition = response.headers.get("content-disposition") || "";
+    const fileName = /filename="([^"]+)"/.exec(disposition)?.[1] || "shared-photo.jpg";
+    return { blob, fileName };
+  };
+
+  const downloadSharedChatImage = async () => {
+    if (!selectedChatImage || chatImageActionBusy) return;
+    setChatImageActionBusy(true);
+    try {
+      const { blob, fileName } = await fetchSharedChatImage(selectedChatImage.messageId);
+      const objectUrl = URL.createObjectURL(blob);
+      const link = document.createElement("a");
+      link.href = objectUrl;
+      link.download = fileName;
+      link.click();
+      window.setTimeout(() => URL.revokeObjectURL(objectUrl), 1000);
+    } catch (error) {
+      showToast(error instanceof Error ? error.message : "Photo download failed.", true);
+    } finally {
+      setChatImageActionBusy(false);
+    }
+  };
+
+  const saveSharedChatImage = async () => {
+    if (!selectedChatImage || chatImageActionBusy) return;
+    setChatImageActionBusy(true);
+    try {
+      const { blob, fileName } = await fetchSharedChatImage(selectedChatImage.messageId);
+      const form = new FormData();
+      form.append("file", blob, fileName);
+      await apiRequest("/images", token, { method: "POST", body: form });
+      setRefreshKey((value) => value + 1);
+      setSelectedChatImage(null);
+      showToast("Photo added to your gallery.");
+    } catch (error) {
+      showToast(error instanceof Error ? error.message : "Photo could not be saved.", true);
+    } finally {
+      setChatImageActionBusy(false);
+    }
+  };
+
   const loadChatConversation = async (receiverId: string, contactName: string) => {
     const messages = await apiRequest<ChatApiMessage[]>(
       `/chat/conversation/${receiverId}`,
@@ -1267,6 +1330,13 @@ export default function Home() {
     } else {
       setChatError("");
     }
+    setChatConversations((current) =>
+      current.map((conversation) =>
+        conversation.userId === receiverId
+          ? { ...conversation, unreadCount: 0 }
+          : conversation,
+      ),
+    );
     setChatReceiverId(receiverId);
     setChatContactName(contactName);
     chatImageRefreshAttemptsRef.current.clear();
@@ -1329,9 +1399,13 @@ export default function Home() {
     }
   };
 
-  const lastReadMessageId = chatMessages
-    .filter((message) => message.sender === "me" && message.isRead)
+  const lastOutgoingMessageId = chatMessages
+    .filter((message) => message.sender === "me")
     .at(-1)?.id;
+  const totalUnreadChatMessages = chatConversations.reduce(
+    (total, conversation) => total + conversation.unreadCount,
+    0,
+  );
 
   if (!ready) return null;
 
@@ -1470,6 +1544,11 @@ export default function Home() {
                 }}
               >
                 <span className="nav-icon">✉</span> Chat
+                {totalUnreadChatMessages > 0 && (
+                  <span className="chat-nav-badge" aria-label={`${totalUnreadChatMessages} unread messages`}>
+                    {totalUnreadChatMessages > 99 ? "99+" : totalUnreadChatMessages}
+                  </span>
+                )}
               </button>
               <button className="nav-item" onClick={openUpload}>
                 <span className="nav-icon">＋</span> New upload
@@ -1515,7 +1594,9 @@ export default function Home() {
                     <aside className="chat-inbox">
                       <div className="chat-inbox-heading">
                         <strong>Messages</strong>
-                        <span>{chatConversations.length}</span>
+                        <span className={totalUnreadChatMessages > 0 ? "chat-inbox-unread" : ""}>
+                          {totalUnreadChatMessages || chatConversations.length}
+                        </span>
                       </div>
                       <div className="chat-conversation-list">
                         {chatConversations.map((conversation) => (
@@ -1536,6 +1617,11 @@ export default function Home() {
                               </span>
                               <span className="chat-conversation-preview">{conversation.preview}</span>
                             </span>
+                            {conversation.unreadCount > 0 && (
+                              <span className="chat-unread-badge" aria-label={`${conversation.unreadCount} unread messages`}>
+                                {conversation.unreadCount > 99 ? "99+" : conversation.unreadCount}
+                              </span>
+                            )}
                           </button>
                         ))}
                         {chatConversations.length === 0 && (
@@ -1578,18 +1664,30 @@ export default function Home() {
                             <div className="chat-message-bubble">
                               {message.text && <p>{message.text}</p>}
                               {message.imageUrl && !chatImageErrors.has(message.id) && (
-                                // eslint-disable-next-line @next/next/no-img-element
-                                <img
-                                  src={message.imageUrl}
-                                  alt="Shared photo"
-                                  className="chat-shared-image"
-                                  onError={() =>
-                                    void refreshChatImage(message.id, message.imageUrl!)
+                                <button
+                                  type="button"
+                                  className="chat-shared-image-button"
+                                  aria-label="Open shared photo actions"
+                                  onClick={() =>
+                                    setSelectedChatImage({
+                                      messageId: message.id,
+                                      url: message.imageUrl!,
+                                    })
                                   }
-                                  onLoad={() =>
-                                    chatMessagesEndRef.current?.scrollIntoView({ block: "end" })
-                                  }
-                                />
+                                >
+                                  {/* eslint-disable-next-line @next/next/no-img-element */}
+                                  <img
+                                    src={message.imageUrl}
+                                    alt="Shared photo. Click to download or add it to your gallery."
+                                    className="chat-shared-image"
+                                    onError={() =>
+                                      void refreshChatImage(message.id, message.imageUrl!)
+                                    }
+                                    onLoad={() =>
+                                      chatMessagesEndRef.current?.scrollIntoView({ block: "end" })
+                                    }
+                                  />
+                                </button>
                               )}
                               {chatImageErrors.has(message.id) && (
                                 <p className="chat-image-error">Photo could not be loaded. It may have been removed.</p>
@@ -1597,8 +1695,12 @@ export default function Home() {
                               {message.createdAt && (
                                 <time className="chat-message-time">{formatChatTime(message.createdAt)}</time>
                               )}
-                              {message.id === lastReadMessageId && message.readAt && (
-                                <span className="chat-read-receipt">Seen {formatChatTime(message.readAt)}</span>
+                              {message.id === lastOutgoingMessageId && (
+                                <span className="chat-read-receipt">
+                                  {message.isRead && message.readAt
+                                    ? `Seen ${formatChatTime(message.readAt)}`
+                                    : "Sent"}
+                                </span>
                               )}
                             </div>
                           </div>
@@ -2024,6 +2126,56 @@ export default function Home() {
             )}
           </section>
         </main>
+      )}
+
+      {selectedChatImage && (
+        <div
+          className="modal-backdrop action-modal-backdrop shared-photo-backdrop"
+          onMouseDown={(event) => {
+            if (event.target === event.currentTarget && !chatImageActionBusy) {
+              setSelectedChatImage(null);
+            }
+          }}
+        >
+          <section
+            className="shared-photo-dialog"
+            role="dialog"
+            aria-modal="true"
+            aria-labelledby="sharedPhotoTitle"
+          >
+            <button
+              className="modal-close"
+              type="button"
+              aria-label="Close photo actions"
+              disabled={chatImageActionBusy}
+              onClick={() => setSelectedChatImage(null)}
+            >
+              ×
+            </button>
+            <span className="eyebrow">SHARED PHOTO</span>
+            <h2 id="sharedPhotoTitle">Keep this photo?</h2>
+            {/* eslint-disable-next-line @next/next/no-img-element */}
+            <img className="shared-photo-dialog-image" src={selectedChatImage.url} alt="Shared photo preview" />
+            <div className="action-dialog-actions">
+              <button
+                className="action-cancel-button"
+                type="button"
+                disabled={chatImageActionBusy}
+                onClick={() => void downloadSharedChatImage()}
+              >
+                {chatImageActionBusy ? "Working…" : "Download"}
+              </button>
+              <button
+                className="button button-coral"
+                type="button"
+                disabled={chatImageActionBusy}
+                onClick={() => void saveSharedChatImage()}
+              >
+                Add to gallery
+              </button>
+            </div>
+          </section>
+        </div>
       )}
 
       {albumDialogOpen && (

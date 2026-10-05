@@ -135,10 +135,71 @@ export class ChatService {
     }
 
     return Promise.all(
-      Array.from(conversations.values()).map((message) =>
-        this.withSignedImageUrl(message),
-      ),
+      Array.from(conversations.entries()).map(async ([peerId, message]) => {
+        const unreadCount = await this.messageModel.countDocuments({
+          sender: new Types.ObjectId(peerId),
+          receiver: objectId,
+          isRead: false,
+        });
+        return {
+          ...(await this.withSignedImageUrl(message))!,
+          unreadCount,
+        };
+      }),
     );
+  }
+
+  async getMessageImageForUser(messageId: string, userId: string) {
+    if (!Types.ObjectId.isValid(messageId) || !Types.ObjectId.isValid(userId)) {
+      throw new BadRequestException('Message or user ID is invalid');
+    }
+
+    const message = await this.messageModel
+      .findById(messageId)
+      .populate('imageId');
+    if (!message) {
+      throw new NotFoundException('Message not found');
+    }
+
+    const senderId = String(message.sender);
+    const receiverId = String(message.receiver);
+    if (senderId !== userId && receiverId !== userId) {
+      throw new NotFoundException('Message not found');
+    }
+
+    const image = message.imageId as unknown as {
+      originalKey?: string;
+      format?: string;
+      transformHistory?: {
+        id: string;
+        key: string;
+        metadata?: { format?: string };
+      }[];
+      transformedKeys?: string[];
+    } | null;
+    if (!image?.originalKey) {
+      throw new NotFoundException('Shared photo not found');
+    }
+
+    const versionId = message.imageVersionId || undefined;
+    const selectedKey = this.getImageVersionKey(image, versionId);
+    if (versionId && versionId !== 'original' && !selectedKey) {
+      throw new NotFoundException('Shared photo version not found');
+    }
+
+    const format =
+      image.transformHistory?.find((version) => version.id === versionId)?.metadata
+        ?.format ?? image.format ?? 'jpeg';
+    const normalizedFormat = format === 'jpg' ? 'jpeg' : format;
+    const extension = normalizedFormat === 'jpeg' ? 'jpg' : normalizedFormat;
+
+    return {
+      buffer: await this.storageService.downloadFile(
+        selectedKey || image.originalKey,
+      ),
+      mimeType: `image/${normalizedFormat}`,
+      fileName: `framehouse-${messageId}.${extension}`,
+    };
   }
 
   private async withSignedImageUrl(message: MessageDocument | null) {

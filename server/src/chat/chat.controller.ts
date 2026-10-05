@@ -4,6 +4,7 @@ import {
   Patch,
   Param,
   Req,
+  StreamableFile,
   UseGuards,
 } from '@nestjs/common';
 import { AuthGuard } from '../auth/guards/auth.guard';
@@ -26,6 +27,21 @@ export class ChatController {
   @Get('conversations')
   async getConversations(@Req() req: any) {
     return this.chatService.getUserChats(req.userId);
+  }
+
+  @Get('messages/:messageId/image')
+  async getMessageImage(
+    @Req() req: any,
+    @Param('messageId') messageId: string,
+  ) {
+    const image = await this.chatService.getMessageImageForUser(
+      messageId,
+      req.userId,
+    );
+    return new StreamableFile(image.buffer, {
+      type: image.mimeType,
+      disposition: `attachment; filename="${image.fileName}"`,
+    });
   }
 
   @Patch('conversation/:userId/read')
