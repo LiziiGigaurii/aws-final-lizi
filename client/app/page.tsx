@@ -197,7 +197,7 @@ export default function Home() {
   const [registerMode, setRegisterMode] = useState(false);
   const [authError, setAuthError] = useState("");
   const [authBusy, setAuthBusy] = useState(false);
-  const [activeTab, setActiveTab] = useState<"library" | "favorites" | "albums">(
+  const [activeTab, setActiveTab] = useState<"library" | "favorites" | "albums" | "chat">(
     "library",
   );
   const [page, setPage] = useState(1);
@@ -762,7 +762,7 @@ export default function Home() {
     }
   }
 
-  function chooseTab(tab: "library" | "favorites") {
+  function chooseTab(tab: "library" | "favorites" | "chat") {
     setActiveTab(tab);
     setOpenAlbumId("");
     setSelectedImageIds(new Set());
@@ -1103,6 +1103,17 @@ export default function Home() {
               >
                 <span className="nav-icon">▣</span> Albums
               </button>
+              <button
+                className={`nav-item${activeTab === "chat" ? " active" : ""}`}
+                onClick={() => {
+                  setActiveTab("chat");
+                  setOpenAlbumId("");
+                  setSelectedImageIds(new Set());
+                  setPage(1);
+                }}
+              >
+                <span className="nav-icon">✉</span> Chat
+              </button>
               <button className="nav-item" onClick={openUpload}>
                 <span className="nav-icon">＋</span> New upload
               </button>
@@ -1214,15 +1225,126 @@ export default function Home() {
                 <span className="visual-label">ORIGINAL / 01</span>
               </div>
             </section>
-            <section className="library-section">
-              <div
-                style={{
-                  display: "grid",
-                  gridTemplateColumns: "minmax(0, 1.5fr) minmax(280px, 0.8fr)",
-                  gap: 20,
-                  alignItems: "start",
-                }}
-              >
+            {activeTab === "chat" ? (
+              <section className="library-section">
+                <div
+                  style={{
+                    maxWidth: 900,
+                    width: "100%",
+                    margin: "0 auto",
+                    background: "rgba(10, 16, 28, 0.82)",
+                    border: "1px solid rgba(255,255,255,0.08)",
+                    borderRadius: 20,
+                    padding: 24,
+                    boxShadow: "0 20px 50px rgba(0,0,0,0.2)",
+                  }}
+                >
+                  <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 18 }}>
+                    <div>
+                      <span className="eyebrow">REAL-TIME CHAT</span>
+                      <h2 style={{ margin: "8px 0 0" }}>Start a conversation</h2>
+                    </div>
+                    <span style={{ background: "rgba(255,255,255,0.08)", borderRadius: 999, padding: "8px 12px", fontSize: 12 }}>
+                      live
+                    </span>
+                  </div>
+
+                  <div style={{ display: "grid", gap: 12, marginBottom: 18 }}>
+                    <input
+                      value={chatReceiverId}
+                      onChange={(event) => setChatReceiverId(event.target.value)}
+                      placeholder="Enter username or email of the person you want to chat with"
+                      style={{
+                        background: "rgba(255,255,255,0.04)",
+                        color: "#fff",
+                        border: "1px solid rgba(255,255,255,0.08)",
+                        borderRadius: 10,
+                        padding: "12px 14px",
+                      }}
+                    />
+                    <select
+                      value={chatImageId}
+                      onChange={(event) => setChatImageId(event.target.value)}
+                      style={{
+                        background: "rgba(255,255,255,0.04)",
+                        color: "#fff",
+                        border: "1px solid rgba(255,255,255,0.08)",
+                        borderRadius: 10,
+                        padding: "12px 14px",
+                      }}
+                    >
+                      <option value="">Attach one of your uploaded photos</option>
+                      {images.map((image) => (
+                        <option key={image.id} value={image.id}>
+                          {image.metadata?.format || "Image"}
+                        </option>
+                      ))}
+                    </select>
+                    <textarea
+                      value={chatInput}
+                      onChange={(event) => setChatInput(event.target.value)}
+                      placeholder="Type your message..."
+                      rows={4}
+                      style={{
+                        resize: "vertical",
+                        background: "rgba(255,255,255,0.04)",
+                        color: "#fff",
+                        border: "1px solid rgba(255,255,255,0.08)",
+                        borderRadius: 10,
+                        padding: 12,
+                      }}
+                    />
+                    <div style={{ display: "flex", justifyContent: "flex-end" }}>
+                      <button
+                        className="button button-dark"
+                        type="button"
+                        onClick={() => void sendChatMessage()}
+                        disabled={!chatReceiverId.trim() || (!chatInput.trim() && !chatImageId)}
+                      >
+                        Send message
+                      </button>
+                    </div>
+                  </div>
+
+                  <div style={{ display: "flex", flexDirection: "column", gap: 12, maxHeight: 420, overflowY: "auto" }}>
+                    {chatMessages.map((message) => (
+                      <div
+                        key={message.id}
+                        style={{
+                          alignSelf: message.sender === "me" ? "flex-end" : "flex-start",
+                          maxWidth: "80%",
+                          background: message.sender === "me" ? "#e86b5d" : "rgba(255,255,255,0.08)",
+                          color: "#fff",
+                          borderRadius: 12,
+                          padding: "10px 12px",
+                        }}
+                      >
+                        {message.text && <div style={{ lineHeight: 1.4 }}>{message.text}</div>}
+                        {message.imageUrl && (
+                          <Image
+                            src={message.imageUrl}
+                            alt="Shared photo"
+                            width={220}
+                            height={180}
+                            unoptimized
+                            style={{ borderRadius: 10, marginTop: 8, objectFit: "cover" }}
+                          />
+                        )}
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              </section>
+            ) : (
+              <section className="library-section">
+                <div
+                  style={{
+                    display: "grid",
+                    gridTemplateColumns: "minmax(0, 1.5fr) minmax(280px, 0.8fr)",
+                    gap: 20,
+                    alignItems: "start",
+                  }}
+                >
                 <div style={{ minWidth: 0 }}>
                   <div className="section-heading">
                     <div>
@@ -1436,135 +1558,9 @@ export default function Home() {
                   )}
                 </div>
 
-                <aside
-                  style={{
-                    background: "rgba(16,24,40,0.68)",
-                    border: "1px solid rgba(255,255,255,0.08)",
-                    borderRadius: 18,
-                    padding: 16,
-                    minHeight: 280,
-                    boxShadow: "0 16px 40px rgba(0,0,0,0.2)",
-                  }}
-                >
-                  <div
-                    style={{
-                      display: "flex",
-                      justifyContent: "space-between",
-                      alignItems: "center",
-                      gap: 12,
-                      marginBottom: 12,
-                    }}
-                  >
-                    <div>
-                      <span className="eyebrow" style={{ color: "#d0d8ff" }}>MESSAGES</span>
-                      <h3 style={{ margin: "6px 0 0", fontSize: 22 }}>Chat</h3>
-                    </div>
-                    <span
-                      style={{
-                        background: "rgba(255,255,255,0.08)",
-                        borderRadius: 999,
-                        padding: "6px 10px",
-                        fontSize: 12,
-                      }}
-                    >
-                      live
-                    </span>
-                  </div>
-
-                  <div
-                    style={{
-                      display: "flex",
-                      flexDirection: "column",
-                      gap: 12,
-                      maxHeight: 320,
-                      overflowY: "auto",
-                      marginBottom: 12,
-                    }}
-                  >
-                    {chatMessages.map((message) => (
-                      <div
-                        key={message.id}
-                        style={{
-                          alignSelf: message.sender === "me" ? "flex-end" : "flex-start",
-                          maxWidth: "82%",
-                          background: message.sender === "me" ? "#e86b5d" : "rgba(255,255,255,0.08)",
-                          color: "#fff",
-                          borderRadius: 12,
-                          padding: "10px 12px",
-                        }}
-                      >
-                        {message.text && <div style={{ lineHeight: 1.4 }}>{message.text}</div>}
-                        {message.imageUrl && (
-                          <Image
-                            src={message.imageUrl}
-                            alt="Shared photo"
-                            width={220}
-                            height={180}
-                            unoptimized
-                            style={{ borderRadius: 10, marginTop: 8, objectFit: "cover" }}
-                          />
-                        )}
-                      </div>
-                    ))}
-                  </div>
-
-                  <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
-                    <input
-                      value={chatReceiverId}
-                      onChange={(event) => setChatReceiverId(event.target.value)}
-                      placeholder="username or email"
-                      style={{
-                        background: "rgba(255,255,255,0.05)",
-                        color: "#fff",
-                        border: "1px solid rgba(255,255,255,0.08)",
-                        borderRadius: 10,
-                        padding: "10px 12px",
-                      }}
-                    />
-                    <select
-                      value={chatImageId}
-                      onChange={(event) => setChatImageId(event.target.value)}
-                      style={{
-                        background: "rgba(255,255,255,0.05)",
-                        color: "#fff",
-                        border: "1px solid rgba(255,255,255,0.08)",
-                        borderRadius: 10,
-                        padding: "10px 12px",
-                      }}
-                    >
-                      <option value="">Attach a photo</option>
-                      {images.map((image) => (
-                        <option key={image.id} value={image.id}>
-                          {image.metadata?.format || "Image"}
-                        </option>
-                      ))}
-                    </select>
-                    <textarea
-                      value={chatInput}
-                      onChange={(event) => setChatInput(event.target.value)}
-                      placeholder="Type a message..."
-                      rows={3}
-                      style={{
-                        resize: "vertical",
-                        background: "rgba(255,255,255,0.05)",
-                        color: "#fff",
-                        border: "1px solid rgba(255,255,255,0.08)",
-                        borderRadius: 10,
-                        padding: 12,
-                      }}
-                    />
-                    <button
-                      className="button button-dark"
-                      type="button"
-                      onClick={() => void sendChatMessage()}
-                      disabled={!chatReceiverId.trim() || (!chatInput.trim() && !chatImageId)}
-                    >
-                      Send message
-                    </button>
-                  </div>
-                </aside>
               </div>
             </section>
+            )}
           </section>
         </main>
       )}
