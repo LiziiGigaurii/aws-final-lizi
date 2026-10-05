@@ -22,6 +22,7 @@ export class ChatService {
     text?: string;
     imageId?: string;
     imageVersionId?: string;
+    images?: { imageId: string; imageVersionId?: string }[];
   }) {
     if (!Types.ObjectId.isValid(data.senderId)) {
       throw new BadRequestException('Sender ID is invalid');
@@ -39,13 +40,24 @@ export class ChatService {
     if (data.imageId && !Types.ObjectId.isValid(data.imageId)) {
       throw new BadRequestException('Image ID is invalid');
     }
+    if (
+      data.images?.length &&
+      (data.images.length > 10 ||
+        data.images.some((image) => !Types.ObjectId.isValid(image.imageId)))
+    ) {
+      throw new BadRequestException('Image attachments are invalid');
+    }
     const imageId = data.imageId ? new Types.ObjectId(data.imageId) : null;
+    const images = (data.images || []).map((image) => ({
+      imageId: new Types.ObjectId(image.imageId),
+      imageVersionId: image.imageVersionId || null,
+    }));
 
     if (data.imageVersionId && !imageId) {
       throw new BadRequestException('An image version requires an image');
     }
 
-    if (!text && !imageId) {
+    if (!text && !imageId && images.length === 0) {
       throw new BadRequestException(
         'Message must contain text, an image, or both',
       );
@@ -57,6 +69,7 @@ export class ChatService {
       text,
       imageId,
       imageVersionId: data.imageVersionId || null,
+      images,
       isRead: false,
     });
 
@@ -64,18 +77,39 @@ export class ChatService {
       .findById(message._id)
       .populate('sender', 'username')
       .populate('receiver', 'username')
-      .populate('imageId');
+      .populate('imageId')
+      .populate('images.imageId');
     const populatedImage = savedMessage?.imageId as unknown as {
       originalKey?: string;
       transformedKeys?: string[];
       transformHistory?: { id: string; key: string }[];
     } | null;
+    const populatedAttachments = savedMessage?.images as unknown as {
+      imageId?: {
+        originalKey?: string;
+        transformedKeys?: string[];
+        transformHistory?: { id: string; key: string }[];
+      } | null;
+      imageVersionId?: string | null;
+    }[] | undefined;
     if (
-      imageId &&
-      (!populatedImage ||
+      (imageId &&
+        (!populatedImage ||
         (data.imageVersionId &&
           data.imageVersionId !== 'original' &&
-          !this.getImageVersionKey(populatedImage, data.imageVersionId)))
+          !this.getImageVersionKey(populatedImage, data.imageVersionId)))) ||
+      (images.length > 0 &&
+        (populatedAttachments?.length !== images.length ||
+          populatedAttachments.some(
+            (attachment) =>
+              !attachment.imageId?.originalKey ||
+              (attachment.imageVersionId &&
+                attachment.imageVersionId !== 'original' &&
+                !this.getImageVersionKey(
+                  attachment.imageId,
+                  attachment.imageVersionId,
+                )),
+          )))
     ) {
       await this.messageModel.deleteOne({ _id: message._id });
       throw new NotFoundException('Image or image version not found');
@@ -102,7 +136,8 @@ export class ChatService {
       .sort({ createdAt: 1 })
       .populate('sender', 'username')
       .populate('receiver', 'username')
-      .populate('imageId');
+      .populate('imageId')
+      .populate('images.imageId');
 
     return Promise.all(messages.map((message) => this.withSignedImageUrl(message)));
   }
@@ -121,7 +156,8 @@ export class ChatService {
       .sort({ createdAt: -1 })
       .populate('sender', 'username email')
       .populate('receiver', 'username email')
-      .populate('imageId');
+      .populate('imageId')
+      .populate('images.imageId');
 
     const conversations = new Map<string, any>();
 
@@ -149,14 +185,22 @@ export class ChatService {
     );
   }
 
-  async getMessageImageForUser(messageId: string, userId: string) {
+  async getMessageImageForUser(
+    messageId: string,
+    userId: string,
+    imageIndex = 0,
+  ) {
     if (!Types.ObjectId.isValid(messageId) || !Types.ObjectId.isValid(userId)) {
       throw new BadRequestException('Message or user ID is invalid');
+    }
+    if (!Number.isInteger(imageIndex) || imageIndex < 0) {
+      throw new BadRequestException('Image index is invalid');
     }
 
     const message = await this.messageModel
       .findById(messageId)
-      .populate('imageId');
+      .populate('imageId')
+      .populate('images.imageId');
     if (!message) {
       throw new NotFoundException('Message not found');
     }
@@ -167,7 +211,16 @@ export class ChatService {
       throw new NotFoundException('Message not found');
     }
 
-    const image = message.imageId as unknown as {
+    const imageAttachments = message.images?.length
+      ? (message.images as unknown as {
+          imageId: unknown;
+          imageVersionId?: string | null;
+        }[])
+      : message.imageId
+        ? [{ imageId: message.imageId, imageVersionId: message.imageVersionId }]
+        : [];
+    const attachment = imageAttachments[imageIndex];
+    const image = attachment?.imageId as unknown as {
       originalKey?: string;
       format?: string;
       transformHistory?: {
@@ -181,7 +234,7 @@ export class ChatService {
       throw new NotFoundException('Shared photo not found');
     }
 
-    const versionId = message.imageVersionId || undefined;
+    const versionId = attachment.imageVersionId || undefined;
     const selectedKey = this.getImageVersionKey(image, versionId);
     if (versionId && versionId !== 'original' && !selectedKey) {
       throw new NotFoundException('Shared photo version not found');
@@ -198,7 +251,7 @@ export class ChatService {
         selectedKey || image.originalKey,
       ),
       mimeType: `image/${normalizedFormat}`,
-      fileName: `framehouse-${messageId}.${extension}`,
+      fileName: `framehouse-${messageId}-${imageIndex + 1}.${extension}`,
     };
   }
 
@@ -221,10 +274,40 @@ export class ChatService {
           url: await this.storageService.getSignedUrl(imageKey),
         }
       : message.imageId;
+    const populatedAttachments = (message.images || []) as unknown as {
+      imageId: {
+        originalKey?: string;
+        transformedKeys?: string[];
+        transformHistory?: { id: string; key: string }[];
+        toObject?: () => Record<string, unknown>;
+      };
+      imageVersionId?: string | null;
+      toObject?: () => Record<string, unknown>;
+    }[];
+    const images = await Promise.all(
+      populatedAttachments.map(async (attachment) => {
+        const attachmentImage = attachment.imageId;
+        const attachmentKey = this.getImageVersionKey(
+          attachmentImage,
+          attachment.imageVersionId || undefined,
+        ) || attachmentImage?.originalKey;
+        return {
+          ...(attachment.toObject?.() || attachment),
+          imageId:
+            attachmentKey && attachmentImage?.toObject
+              ? {
+                  ...attachmentImage.toObject(),
+                  url: await this.storageService.getSignedUrl(attachmentKey),
+                }
+              : attachment.imageId,
+        };
+      }),
+    );
 
     return {
       ...message.toObject(),
       imageId,
+      images,
     };
   }
 

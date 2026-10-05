@@ -84,6 +84,10 @@ type ChatApiMessage = {
   text?: string;
   imageId?: string | { url?: string; originalKey?: string } | null;
   imageVersionId?: string | null;
+  images?: {
+    imageId?: string | { url?: string; originalKey?: string } | null;
+    imageVersionId?: string | null;
+  }[];
   createdAt?: string;
   isRead?: boolean;
   readAt?: string;
@@ -113,11 +117,26 @@ function mapChatMessage(message: ChatApiMessage, currentUserId: string) {
   const imageUrl =
     image?.url ||
     (image?.originalKey?.startsWith("http") ? image.originalKey : undefined);
+  const imageUrls = (message.images || [])
+    .map((attachment) => {
+      const attachedImage =
+        typeof attachment.imageId === "object" ? attachment.imageId : null;
+      return (
+        attachedImage?.url ||
+        (attachedImage?.originalKey?.startsWith("http")
+          ? attachedImage.originalKey
+          : undefined)
+      );
+    })
+    .filter((url): url is string => Boolean(url));
+  if (imageUrls.length === 0 && imageUrl) imageUrls.push(imageUrl);
+  const hasSharedImages = Boolean(message.imageId || message.images?.length);
   return {
     id: message._id,
     sender: chatUserId(message.sender) === currentUserId ? ("me" as const) : ("them" as const),
-    text: message.text || (message.imageId && !imageUrl ? "Photo is no longer available" : ""),
+    text: message.text || (hasSharedImages && imageUrls.length === 0 ? "Photo is no longer available" : ""),
     imageUrl,
+    imageUrls,
     createdAt: message.createdAt,
     isRead: message.isRead,
     readAt: message.readAt,
@@ -130,7 +149,9 @@ function mapChatConversation(message: ChatApiMessage, currentUserId: string): Ch
   return {
     userId: chatUserId(peer),
     username: chatUserName(peer) || "User",
-    preview: message.text || (message.imageId ? "Shared a photo" : "New message"),
+    preview:
+      message.text ||
+      (message.imageId || message.images?.length ? "Shared a photo" : "New message"),
     createdAt: message.createdAt,
     unreadCount: message.unreadCount ?? 0,
   };
@@ -337,12 +358,13 @@ export default function Home() {
     sepia: false,
   });
   const [chatMessages, setChatMessages] = useState<
-    { id: string; sender: "me" | "them"; text?: string; imageUrl?: string; createdAt?: string; isRead?: boolean; readAt?: string }[]
+    { id: string; sender: "me" | "them"; text?: string; imageUrl?: string; imageUrls?: string[]; createdAt?: string; isRead?: boolean; readAt?: string }[]
   >([]);
   const [chatImageErrors, setChatImageErrors] = useState<Set<string>>(new Set());
   const [chatConversations, setChatConversations] = useState<ChatConversation[]>([]);
   const [selectedChatImage, setSelectedChatImage] = useState<{
     messageId: string;
+    imageIndex: number;
     url: string;
   } | null>(null);
   const [chatImageActionBusy, setChatImageActionBusy] = useState(false);
@@ -1189,13 +1211,15 @@ export default function Home() {
     setChatSending(true);
     setChatError("");
     try {
-      const sendOne = async (attachment?: ChatAttachment, text = "") => {
+      const sendOne = async (text: string, selectedAttachments: ChatAttachment[]) => {
         const response = (await socket.timeout(10000).emitWithAck("send-message", {
           senderId: currentUserId,
           receiverId: chatReceiverId,
           text,
-          imageId: attachment?.id,
-          imageVersionId: attachment?.versionId,
+          images: selectedAttachments.map((attachment) => ({
+            imageId: attachment.id,
+            imageVersionId: attachment.versionId,
+          })),
         })) as {
           status?: string;
           message?: ChatApiMessage | string;
@@ -1220,19 +1244,9 @@ export default function Home() {
         );
       };
 
-      if (attachments.length) {
-        for (let index = 0; index < attachments.length; index += 1) {
-          const attachment = attachments[index];
-          await sendOne(attachment, index === 0 ? trimmed : "");
-          setChatAttachments((current) =>
-            current.filter((item) => item.clientId !== attachment.clientId),
-          );
-          if (index === 0 && trimmed) setChatInput("");
-        }
-      } else {
-        await sendOne(undefined, trimmed);
-      }
+      await sendOne(trimmed, attachments);
       setChatInput("");
+      setChatAttachments([]);
     } catch (error) {
       setChatError(error instanceof Error ? error.message : "Message could not be sent.");
     } finally {
@@ -1241,17 +1255,22 @@ export default function Home() {
     }
   };
 
-  const refreshChatImage = async (messageId: string, failedUrl: string) => {
+  const refreshChatImage = async (
+    messageId: string,
+    imageIndex: number,
+    failedUrl: string,
+  ) => {
     const receiverId = activeChatReceiverRef.current;
+    const errorKey = `${messageId}:${imageIndex}`;
     const markUnavailable = () =>
-      setChatImageErrors((current) => new Set(current).add(messageId));
+      setChatImageErrors((current) => new Set(current).add(errorKey));
 
-    if (!receiverId || chatImageRefreshAttemptsRef.current.has(messageId)) {
+    if (!receiverId || chatImageRefreshAttemptsRef.current.has(errorKey)) {
       markUnavailable();
       return;
     }
 
-    chatImageRefreshAttemptsRef.current.add(messageId);
+    chatImageRefreshAttemptsRef.current.add(errorKey);
     try {
       const messages = await apiRequest<ChatApiMessage[]>(
         `/chat/conversation/${receiverId}`,
@@ -1261,20 +1280,25 @@ export default function Home() {
       const mapped = refreshed && mapChatMessage(refreshed, currentUserId);
 
       if (activeChatReceiverRef.current !== receiverId) return;
-      if (!mapped?.imageUrl || mapped.imageUrl === failedUrl) {
+      const refreshedUrl = mapped?.imageUrls?.[imageIndex];
+      if (!refreshedUrl || refreshedUrl === failedUrl) {
         markUnavailable();
         return;
       }
 
       setChatImageErrors((current) => {
         const next = new Set(current);
-        next.delete(messageId);
+        next.delete(errorKey);
         return next;
       });
       setChatMessages((current) =>
         current.map((message) =>
           message.id === messageId
-            ? { ...message, imageUrl: mapped.imageUrl }
+            ? {
+                ...message,
+                imageUrl: mapped.imageUrls?.[0],
+                imageUrls: mapped.imageUrls,
+              }
             : message,
         ),
       );
@@ -1283,9 +1307,9 @@ export default function Home() {
     }
   };
 
-  const fetchSharedChatImage = async (messageId: string) => {
+  const fetchSharedChatImage = async (messageId: string, imageIndex: number) => {
     const response = await fetch(
-      `${API_URL}/chat/messages/${encodeURIComponent(messageId)}/image`,
+      `${API_URL}/chat/messages/${encodeURIComponent(messageId)}/images/${imageIndex}`,
       { headers: { Authorization: `Bearer ${token}` } },
     );
     if (!response.ok) {
@@ -1302,7 +1326,10 @@ export default function Home() {
     if (!selectedChatImage || chatImageActionBusy) return;
     setChatImageActionBusy(true);
     try {
-      const { blob, fileName } = await fetchSharedChatImage(selectedChatImage.messageId);
+      const { blob, fileName } = await fetchSharedChatImage(
+        selectedChatImage.messageId,
+        selectedChatImage.imageIndex,
+      );
       const objectUrl = URL.createObjectURL(blob);
       const link = document.createElement("a");
       link.href = objectUrl;
@@ -1320,7 +1347,10 @@ export default function Home() {
     if (!selectedChatImage || chatImageActionBusy) return;
     setChatImageActionBusy(true);
     try {
-      const { blob, fileName } = await fetchSharedChatImage(selectedChatImage.messageId);
+      const { blob, fileName } = await fetchSharedChatImage(
+        selectedChatImage.messageId,
+        selectedChatImage.imageIndex,
+      );
       const form = new FormData();
       form.append("file", blob, fileName);
       await apiRequest("/images", token, { method: "POST", body: form });
@@ -1692,34 +1722,44 @@ export default function Home() {
                           <div className={`chat-message-row ${message.sender}`} key={message.id}>
                             <div className="chat-message-bubble">
                               {message.text && <p>{message.text}</p>}
-                              {message.imageUrl && !chatImageErrors.has(message.id) && (
-                                <button
-                                  type="button"
-                                  className="chat-shared-image-button"
-                                  aria-label="Open shared photo actions"
-                                  onClick={() =>
-                                    setSelectedChatImage({
-                                      messageId: message.id,
-                                      url: message.imageUrl!,
-                                    })
-                                  }
-                                >
-                                  {/* eslint-disable-next-line @next/next/no-img-element */}
-                                  <img
-                                    src={message.imageUrl}
-                                    alt="Shared photo. Click to download or add it to your gallery."
-                                    className="chat-shared-image"
-                                    onError={() =>
-                                      void refreshChatImage(message.id, message.imageUrl!)
-                                    }
-                                    onLoad={() =>
-                                      chatMessagesEndRef.current?.scrollIntoView({ block: "end" })
-                                    }
-                                  />
-                                </button>
-                              )}
-                              {chatImageErrors.has(message.id) && (
-                                <p className="chat-image-error">Photo could not be loaded. It may have been removed.</p>
+                              {message.imageUrls && message.imageUrls.length > 0 && (
+                                <div className={`chat-shared-images${message.imageUrls.length === 1 ? " is-single" : ""}`}>
+                                  {message.imageUrls.map((imageUrl, imageIndex) => {
+                                    const imageErrorKey = `${message.id}:${imageIndex}`;
+                                    return chatImageErrors.has(imageErrorKey) ? (
+                                      <span className="chat-image-unavailable" key={imageErrorKey}>
+                                        Photo unavailable
+                                      </span>
+                                    ) : (
+                                      <button
+                                        type="button"
+                                        className="chat-shared-image-button"
+                                        key={imageErrorKey}
+                                        aria-label={`Open shared photo ${imageIndex + 1} actions`}
+                                        onClick={() =>
+                                          setSelectedChatImage({
+                                            messageId: message.id,
+                                            imageIndex,
+                                            url: imageUrl,
+                                          })
+                                        }
+                                      >
+                                        {/* eslint-disable-next-line @next/next/no-img-element */}
+                                        <img
+                                          src={imageUrl}
+                                          alt={`Shared photo ${imageIndex + 1}. Click to download or add it to your gallery.`}
+                                          className="chat-shared-image"
+                                          onError={() =>
+                                            void refreshChatImage(message.id, imageIndex, imageUrl)
+                                          }
+                                          onLoad={() =>
+                                            chatMessagesEndRef.current?.scrollIntoView({ block: "end" })
+                                          }
+                                        />
+                                      </button>
+                                    );
+                                  })}
+                                </div>
                               )}
                               {message.createdAt && (
                                 <time className="chat-message-time">{formatChatTime(message.createdAt)}</time>

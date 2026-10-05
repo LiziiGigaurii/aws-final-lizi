@@ -34,9 +34,27 @@ export class ChatController {
     @Req() req: any,
     @Param('messageId') messageId: string,
   ) {
+    return this.streamMessageImage(req.userId, messageId, 0);
+  }
+
+  @Get('messages/:messageId/images/:imageIndex')
+  async getMessageImageAttachment(
+    @Req() req: any,
+    @Param('messageId') messageId: string,
+    @Param('imageIndex') imageIndex: string,
+  ) {
+    return this.streamMessageImage(req.userId, messageId, Number(imageIndex));
+  }
+
+  private async streamMessageImage(
+    userId: string,
+    messageId: string,
+    imageIndex: number,
+  ) {
     const image = await this.chatService.getMessageImageForUser(
       messageId,
-      req.userId,
+      userId,
+      imageIndex,
     );
     return new StreamableFile(image.buffer, {
       type: image.mimeType,

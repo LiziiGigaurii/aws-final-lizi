@@ -78,6 +78,7 @@ export class ChatGateway {
       text?: string;
       imageId?: string;
       imageVersionId?: string;
+      images?: { imageId: string; imageVersionId?: string }[];
     },
   ) {
     const joinedUserId = client.data.userId as string | undefined;

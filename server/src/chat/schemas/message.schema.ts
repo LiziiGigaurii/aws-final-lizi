@@ -22,6 +22,17 @@ export class Message {
   @Prop({ type: String, default: null })
   imageVersionId: string | null;
 
+  @Prop({
+    type: [
+      {
+        imageId: { type: Types.ObjectId, ref: Image.name, required: true },
+        imageVersionId: { type: String, default: null },
+      },
+    ],
+    default: [],
+  })
+  images: { imageId: Types.ObjectId; imageVersionId: string | null }[];
+
   @Prop({ default: false })
   isRead: boolean;
 
