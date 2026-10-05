@@ -250,21 +250,14 @@ export default function Home() {
   });
   const [chatMessages, setChatMessages] = useState<
     { id: string; sender: "me" | "them"; text?: string; imageUrl?: string }[]
-  >([
-    {
-      id: "welcome",
-      sender: "them",
-      text: "Hi! Your chat is live now.",
-    },
-    {
-      id: "welcome-2",
-      sender: "me",
-      text: "Awesome — I can send text and attached photos here.",
-    },
-  ]);
+  >([]);
   const [chatInput, setChatInput] = useState("");
   const [chatImageId, setChatImageId] = useState("");
   const [chatReceiverId, setChatReceiverId] = useState("");
+  const [chatRecipientInput, setChatRecipientInput] = useState("");
+  const [chatContactName, setChatContactName] = useState("");
+  const [chatError, setChatError] = useState("");
+  const [chatBusy, setChatBusy] = useState(false);
   const [currentUserId, setCurrentUserId] = useState("");
   const socketRef = useRef<Socket | null>(null);
   const fileInput = useRef<HTMLInputElement>(null);
@@ -942,22 +935,11 @@ export default function Home() {
   const sendChatMessage = async () => {
     const trimmed = chatInput.trim();
     const selectedImage = images.find((image) => image.id === chatImageId);
-    const receiverInput = chatReceiverId.trim();
-    if (!receiverInput || (!trimmed && !selectedImage)) return;
-
-    let resolvedReceiverId = receiverInput;
-    if (!/^[0-9a-fA-F]{24}$/.test(receiverInput)) {
-      const result = await apiRequest<{ id: string }>(
-        `/users/search?query=${encodeURIComponent(receiverInput)}`,
-        token,
-      );
-      resolvedReceiverId = result.id;
-      setChatReceiverId(result.id);
-    }
+    if (!chatReceiverId || (!trimmed && !selectedImage)) return;
 
     const payload = {
       senderId: currentUserId,
-      receiverId: resolvedReceiverId,
+      receiverId: chatReceiverId,
       text: trimmed || "",
       imageId: selectedImage?.id,
     };
@@ -974,6 +956,62 @@ export default function Home() {
     setChatMessages((current) => [...current, newMessage]);
     setChatInput("");
     setChatImageId("");
+  };
+
+  const openChatConversation = async () => {
+    const query = chatRecipientInput.trim();
+    if (!query) return;
+
+    setChatBusy(true);
+    setChatError("");
+    try {
+      const recipient = await apiRequest<{
+        id: string;
+        username?: string;
+        email?: string;
+      }>(`/users/search?query=${encodeURIComponent(query)}`, token);
+      if (recipient.id === currentUserId) {
+        throw new Error("You cannot start a conversation with yourself.");
+      }
+
+      const messages = await apiRequest<
+        {
+          _id: string;
+          sender: { _id?: string } | string;
+          text?: string;
+          imageId?: { url?: string; originalKey?: string } | string | null;
+        }[]
+      >(`/chat/conversation/${recipient.id}`, token);
+
+      setChatReceiverId(recipient.id);
+      setChatContactName(recipient.username || recipient.email || query);
+      setChatMessages(
+        messages.map((message) => {
+          const senderId =
+            typeof message.sender === "string"
+              ? message.sender
+              : message.sender?._id || "";
+          const image =
+            typeof message.imageId === "object" ? message.imageId : null;
+          const imageUrl = image?.url || image?.originalKey;
+          return {
+            id: message._id,
+            sender: senderId === currentUserId ? "me" : "them",
+            text: message.text || (imageUrl ? "Sent a photo" : ""),
+            imageUrl,
+          };
+        }),
+      );
+    } catch (error) {
+      setChatReceiverId("");
+      setChatContactName("");
+      setChatMessages([]);
+      setChatError(
+        error instanceof Error ? error.message : "Unable to open this conversation.",
+      );
+    } finally {
+      setChatBusy(false);
+    }
   };
 
   if (!ready) return null;
@@ -1136,7 +1174,121 @@ export default function Home() {
               Log out <span>↗</span>
             </button>
           </aside>
-          <section className="workspace">
+          <section className={`workspace${activeTab === "chat" ? " chat-workspace" : ""}`}>
+            {activeTab === "chat" ? (
+              <>
+                <header className="topbar chat-topbar">
+                  <div>
+                    <span className="eyebrow">FRAMEHOUSE / MESSAGES</span>
+                    <h1>Conversations<span>.</span></h1>
+                  </div>
+                  <div className="chat-presence"><span /> Live chat</div>
+                </header>
+                <section className="chat-page">
+                  <div className="chat-surface">
+                    <header className="chat-conversation-header">
+                      <div className="chat-contact-mark">
+                        {chatContactName ? chatContactName.slice(0, 1).toUpperCase() : "F"}
+                      </div>
+                      <div className="chat-contact-copy">
+                        <strong>{chatContactName || "New conversation"}</strong>
+                        <span>{chatContactName ? "Private conversation" : "Find someone by username or email"}</span>
+                      </div>
+                      <form
+                        className="chat-recipient-form"
+                        onSubmit={(event) => {
+                          event.preventDefault();
+                          void openChatConversation();
+                        }}
+                      >
+                        <input
+                          aria-label="Username or email"
+                          value={chatRecipientInput}
+                          onChange={(event) => setChatRecipientInput(event.target.value)}
+                          placeholder="Username or email"
+                        />
+                        <button className="button button-dark" type="submit" disabled={chatBusy || !chatRecipientInput.trim()}>
+                          {chatBusy ? "Opening..." : "Open chat"}
+                        </button>
+                      </form>
+                    </header>
+
+                    <div className="chat-messages" aria-live="polite">
+                      {chatError ? (
+                        <div className="chat-empty-state chat-error-state">
+                          <span>!</span>
+                          <strong>Conversation not available</strong>
+                          <p>{chatError}</p>
+                        </div>
+                      ) : chatMessages.length ? (
+                        chatMessages.map((message) => (
+                          <div className={`chat-message-row ${message.sender}`} key={message.id}>
+                            <div className="chat-message-bubble">
+                              {message.text && <p>{message.text}</p>}
+                              {message.imageUrl && (
+                                <Image
+                                  src={message.imageUrl}
+                                  alt="Shared photo"
+                                  width={420}
+                                  height={320}
+                                  unoptimized
+                                  className="chat-shared-image"
+                                />
+                              )}
+                            </div>
+                          </div>
+                        ))
+                      ) : (
+                        <div className="chat-empty-state">
+                          <span>✉</span>
+                          <strong>{chatContactName ? "Your conversation starts here" : "A little closer, even from afar."}</strong>
+                          <p>{chatContactName ? "Send a message or share a photo from your library." : "Enter an existing username or email above to open a private conversation."}</p>
+                        </div>
+                      )}
+                    </div>
+
+                    <form
+                      className="chat-composer"
+                      onSubmit={(event) => {
+                        event.preventDefault();
+                        void sendChatMessage();
+                      }}
+                    >
+                      <select
+                        aria-label="Attach an uploaded photo"
+                        value={chatImageId}
+                        onChange={(event) => setChatImageId(event.target.value)}
+                        disabled={!chatReceiverId}
+                      >
+                        <option value="">＋ Photo</option>
+                        {images.map((image) => (
+                          <option key={image.id} value={image.id}>
+                            {image.metadata?.format?.toUpperCase() || "Image"} · {image.metadata?.width || "?"} × {image.metadata?.height || "?"}
+                          </option>
+                        ))}
+                      </select>
+                      <textarea
+                        aria-label="Write a message"
+                        value={chatInput}
+                        onChange={(event) => setChatInput(event.target.value)}
+                        placeholder={chatReceiverId ? "Write a message..." : "Open a conversation to start messaging"}
+                        rows={1}
+                        disabled={!chatReceiverId}
+                      />
+                      <button
+                        className="button button-coral chat-send-button"
+                        type="submit"
+                        disabled={!chatReceiverId || (!chatInput.trim() && !chatImageId)}
+                        aria-label="Send message"
+                      >
+                        Send <span>↗</span>
+                      </button>
+                    </form>
+                  </div>
+                </section>
+              </>
+            ) : (
+              <>
             <header className="topbar">
               <div>
                 <span className="eyebrow">IMAGE LIBRARY</span>
@@ -1177,9 +1329,7 @@ export default function Home() {
               </div>
               <div className="stat-card">
                 <span className="stat-label">Latest format</span>
-                <strong>
-                  {images[0]?.metadata?.format?.toUpperCase() || "—"}
-                </strong>
+                <strong>{images[0]?.metadata?.format?.toUpperCase() || "—"}</strong>
                 <span className="stat-detail">from your recent upload</span>
               </div>
               <div className="stat-card stat-accent">
@@ -1191,29 +1341,12 @@ export default function Home() {
             <section id="uploadSection" className="upload-zone">
               <div className="upload-copy">
                 <span className="eyebrow">ADD TO LIBRARY</span>
-                <h2>
-                  Drop a frame
-                  <br />
-                  <em>into the room.</em>
-                </h2>
-                <p>
-                  Upload an original image, then shape a new version without
-                  touching the source.
-                </p>
-                <button
-                  className="button button-dark"
-                  onClick={() => fileInput.current?.click()}
-                  disabled={uploadBusy}
-                >
+                <h2>Drop a frame<br /><em>into the room.</em></h2>
+                <p>Upload an original image, then shape a new version without touching the source.</p>
+                <button className="button button-dark" onClick={() => fileInput.current?.click()} disabled={uploadBusy}>
                   {uploadBusy ? "Uploading…" : "Choose image"} <span>↗</span>
                 </button>
-                <input
-                  ref={fileInput}
-                  type="file"
-                  accept="image/*"
-                  hidden
-                  onChange={handleUpload}
-                />
+                <input ref={fileInput} type="file" accept="image/*" hidden onChange={handleUpload} />
               </div>
               <div className="upload-visual">
                 <div className="visual-frame">
@@ -1225,126 +1358,15 @@ export default function Home() {
                 <span className="visual-label">ORIGINAL / 01</span>
               </div>
             </section>
-            {activeTab === "chat" ? (
-              <section className="library-section">
-                <div
-                  style={{
-                    maxWidth: 900,
-                    width: "100%",
-                    margin: "0 auto",
-                    background: "rgba(10, 16, 28, 0.82)",
-                    border: "1px solid rgba(255,255,255,0.08)",
-                    borderRadius: 20,
-                    padding: 24,
-                    boxShadow: "0 20px 50px rgba(0,0,0,0.2)",
-                  }}
-                >
-                  <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 18 }}>
-                    <div>
-                      <span className="eyebrow">REAL-TIME CHAT</span>
-                      <h2 style={{ margin: "8px 0 0" }}>Start a conversation</h2>
-                    </div>
-                    <span style={{ background: "rgba(255,255,255,0.08)", borderRadius: 999, padding: "8px 12px", fontSize: 12 }}>
-                      live
-                    </span>
-                  </div>
-
-                  <div style={{ display: "grid", gap: 12, marginBottom: 18 }}>
-                    <input
-                      value={chatReceiverId}
-                      onChange={(event) => setChatReceiverId(event.target.value)}
-                      placeholder="Enter username or email of the person you want to chat with"
-                      style={{
-                        background: "rgba(255,255,255,0.04)",
-                        color: "#fff",
-                        border: "1px solid rgba(255,255,255,0.08)",
-                        borderRadius: 10,
-                        padding: "12px 14px",
-                      }}
-                    />
-                    <select
-                      value={chatImageId}
-                      onChange={(event) => setChatImageId(event.target.value)}
-                      style={{
-                        background: "rgba(255,255,255,0.04)",
-                        color: "#fff",
-                        border: "1px solid rgba(255,255,255,0.08)",
-                        borderRadius: 10,
-                        padding: "12px 14px",
-                      }}
-                    >
-                      <option value="">Attach one of your uploaded photos</option>
-                      {images.map((image) => (
-                        <option key={image.id} value={image.id}>
-                          {image.metadata?.format || "Image"}
-                        </option>
-                      ))}
-                    </select>
-                    <textarea
-                      value={chatInput}
-                      onChange={(event) => setChatInput(event.target.value)}
-                      placeholder="Type your message..."
-                      rows={4}
-                      style={{
-                        resize: "vertical",
-                        background: "rgba(255,255,255,0.04)",
-                        color: "#fff",
-                        border: "1px solid rgba(255,255,255,0.08)",
-                        borderRadius: 10,
-                        padding: 12,
-                      }}
-                    />
-                    <div style={{ display: "flex", justifyContent: "flex-end" }}>
-                      <button
-                        className="button button-dark"
-                        type="button"
-                        onClick={() => void sendChatMessage()}
-                        disabled={!chatReceiverId.trim() || (!chatInput.trim() && !chatImageId)}
-                      >
-                        Send message
-                      </button>
-                    </div>
-                  </div>
-
-                  <div style={{ display: "flex", flexDirection: "column", gap: 12, maxHeight: 420, overflowY: "auto" }}>
-                    {chatMessages.map((message) => (
-                      <div
-                        key={message.id}
-                        style={{
-                          alignSelf: message.sender === "me" ? "flex-end" : "flex-start",
-                          maxWidth: "80%",
-                          background: message.sender === "me" ? "#e86b5d" : "rgba(255,255,255,0.08)",
-                          color: "#fff",
-                          borderRadius: 12,
-                          padding: "10px 12px",
-                        }}
-                      >
-                        {message.text && <div style={{ lineHeight: 1.4 }}>{message.text}</div>}
-                        {message.imageUrl && (
-                          <Image
-                            src={message.imageUrl}
-                            alt="Shared photo"
-                            width={220}
-                            height={180}
-                            unoptimized
-                            style={{ borderRadius: 10, marginTop: 8, objectFit: "cover" }}
-                          />
-                        )}
-                      </div>
-                    ))}
-                  </div>
-                </div>
-              </section>
-            ) : (
-              <section className="library-section">
-                <div
-                  style={{
-                    display: "grid",
-                    gridTemplateColumns: "minmax(0, 1.5fr) minmax(280px, 0.8fr)",
-                    gap: 20,
-                    alignItems: "start",
-                  }}
-                >
+            <section className="library-section">
+              <div
+                style={{
+                  display: "grid",
+                  gridTemplateColumns: "minmax(0, 1.5fr) minmax(280px, 0.8fr)",
+                  gap: 20,
+                  alignItems: "start",
+                }}
+              >
                 <div style={{ minWidth: 0 }}>
                   <div className="section-heading">
                     <div>
@@ -1560,6 +1582,7 @@ export default function Home() {
 
               </div>
             </section>
+              </>
             )}
           </section>
         </main>
