@@ -72,6 +72,26 @@ export class ImagesController {
   }
 
   @UseGuards(AuthGuard)
+  @UseInterceptors(FileInterceptor('file'))
+  @Post('chat-attachment')
+  @ApiOperation({ summary: 'Upload an image for chat without adding it to the library' })
+  @ApiConsumes('multipart/form-data')
+  uploadChatAttachment(
+    @UploadedFile() file: Express.Multer.File,
+    @Request() req: AuthenticatedRequest,
+  ) {
+    if (!file) {
+      throw new BadRequestException('ფაილი სავალდებულოა');
+    }
+
+    if (!req.userId) {
+      throw new BadRequestException('მომხმარებელი ვერ განისაზღვრა');
+    }
+
+    return this.imagesService.create(file, req.userId, true);
+  }
+
+  @UseGuards(AuthGuard)
   @Post(':id/compression-preview')
   @Header('Cache-Control', 'no-store')
   @ApiOperation({ summary: 'Preview image compression without saving a version' })

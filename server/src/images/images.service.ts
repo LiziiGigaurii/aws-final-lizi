@@ -33,7 +33,11 @@ export class ImagesService {
 		private readonly storageService: StorageService,
 	) {}
 
-	async create(file: Express.Multer.File, ownerId: string) {
+	async create(
+		file: Express.Multer.File,
+		ownerId: string,
+		isChatOnly = false,
+	) {
 		if (!Types.ObjectId.isValid(ownerId)) {
 			throw new BadRequestException('მომხმარებლის ID არასწორია');
 		}
@@ -57,6 +61,7 @@ export class ImagesService {
 			const image = await this.imageModel.create({
 				owner: new Types.ObjectId(ownerId),
 				originalKey,
+				isChatOnly,
 				format: metadata.format,
 				size: file.size,
 				width: metadata.width,
@@ -396,7 +401,9 @@ export class ImagesService {
 		}
 
 		const owner = new Types.ObjectId(ownerId);
-		const filter = favoriteOnly ? { owner, isFavorite: true } : { owner };
+		const filter = favoriteOnly
+			? { owner, isFavorite: true, isChatOnly: { $ne: true } }
+			: { owner, isChatOnly: { $ne: true } };
 		const [images, total] = await Promise.all([
 			this.imageModel
 				.find(filter)

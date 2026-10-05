@@ -1177,7 +1177,7 @@ export default function Home() {
       for (const file of files) {
         const form = new FormData();
         form.append("file", file);
-        const uploaded = await apiRequest<{ id: string; url: string }>("/images", token, {
+        const uploaded = await apiRequest<{ id: string; url: string }>("/images/chat-attachment", token, {
           method: "POST",
           body: form,
         });
@@ -2020,7 +2020,7 @@ export default function Home() {
               <div
                 style={{
                   display: "grid",
-                  gridTemplateColumns: "minmax(0, 1.5fr) minmax(280px, 0.8fr)",
+                  gridTemplateColumns: "minmax(0, 1fr)",
                   gap: 20,
                   alignItems: "start",
                 }}

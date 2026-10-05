@@ -28,6 +28,9 @@ export class Image {
   @Prop({ type: [MongooseSchema.Types.Mixed], default: [] })
   transformHistory: ImageTransformHistory[];
 
+  @Prop({ type: Boolean, default: false })
+  isChatOnly: boolean;
+
   @Prop({ default: false })
   isFavorite: boolean;
 
