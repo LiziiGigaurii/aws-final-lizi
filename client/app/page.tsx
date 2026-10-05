@@ -75,6 +75,7 @@ type ChatApiMessage = {
   receiver?: ChatUserRef;
   text?: string;
   imageId?: string | { url?: string; originalKey?: string } | null;
+  imageVersionId?: string | null;
   createdAt?: string;
   isRead?: boolean;
   readAt?: string;
@@ -316,9 +317,14 @@ export default function Home() {
   const [chatMessages, setChatMessages] = useState<
     { id: string; sender: "me" | "them"; text?: string; imageUrl?: string; createdAt?: string; isRead?: boolean; readAt?: string }[]
   >([]);
+  const [chatImageErrors, setChatImageErrors] = useState<Set<string>>(new Set());
   const [chatConversations, setChatConversations] = useState<ChatConversation[]>([]);
   const [chatInput, setChatInput] = useState("");
-  const [chatAttachment, setChatAttachment] = useState<{ id: string; url: string } | null>(null);
+  const [chatAttachment, setChatAttachment] = useState<{
+    id: string;
+    versionId?: string;
+    url: string;
+  } | null>(null);
   const [chatUploading, setChatUploading] = useState(false);
   const [chatReceiverId, setChatReceiverId] = useState("");
   const [chatRecipientInput, setChatRecipientInput] = useState("");
@@ -330,6 +336,7 @@ export default function Home() {
   const [currentUserId, setCurrentUserId] = useState("");
   const socketRef = useRef<Socket | null>(null);
   const activeChatReceiverRef = useRef("");
+  const chatImageRefreshAttemptsRef = useRef(new Set<string>());
   const chatMessagesEndRef = useRef<HTMLDivElement>(null);
   const chatTextareaRef = useRef<HTMLTextAreaElement>(null);
   const chatFileInput = useRef<HTMLInputElement>(null);
@@ -1158,6 +1165,7 @@ export default function Home() {
       receiverId: chatReceiverId,
       text: trimmed || "",
       imageId: attachment?.id,
+      imageVersionId: attachment?.versionId,
     };
 
     setChatSending(true);
@@ -1192,6 +1200,48 @@ export default function Home() {
     }
   };
 
+  const refreshChatImage = async (messageId: string, failedUrl: string) => {
+    const receiverId = activeChatReceiverRef.current;
+    const markUnavailable = () =>
+      setChatImageErrors((current) => new Set(current).add(messageId));
+
+    if (!receiverId || chatImageRefreshAttemptsRef.current.has(messageId)) {
+      markUnavailable();
+      return;
+    }
+
+    chatImageRefreshAttemptsRef.current.add(messageId);
+    try {
+      const messages = await apiRequest<ChatApiMessage[]>(
+        `/chat/conversation/${receiverId}`,
+        token,
+      );
+      const refreshed = messages.find((message) => message._id === messageId);
+      const mapped = refreshed && mapChatMessage(refreshed, currentUserId);
+
+      if (activeChatReceiverRef.current !== receiverId) return;
+      if (!mapped?.imageUrl || mapped.imageUrl === failedUrl) {
+        markUnavailable();
+        return;
+      }
+
+      setChatImageErrors((current) => {
+        const next = new Set(current);
+        next.delete(messageId);
+        return next;
+      });
+      setChatMessages((current) =>
+        current.map((message) =>
+          message.id === messageId
+            ? { ...message, imageUrl: mapped.imageUrl }
+            : message,
+        ),
+      );
+    } catch {
+      if (activeChatReceiverRef.current === receiverId) markUnavailable();
+    }
+  };
+
   const loadChatConversation = async (receiverId: string, contactName: string) => {
     const messages = await apiRequest<ChatApiMessage[]>(
       `/chat/conversation/${receiverId}`,
@@ -1219,6 +1269,8 @@ export default function Home() {
     }
     setChatReceiverId(receiverId);
     setChatContactName(contactName);
+    chatImageRefreshAttemptsRef.current.clear();
+    setChatImageErrors(new Set());
     setChatMessages(
       messages.map((message) => {
         const mapped = mapChatMessage(message, currentUserId);
@@ -1525,18 +1577,22 @@ export default function Home() {
                           <div className={`chat-message-row ${message.sender}`} key={message.id}>
                             <div className="chat-message-bubble">
                               {message.text && <p>{message.text}</p>}
-                              {message.imageUrl && (
-                                <Image
+                              {message.imageUrl && !chatImageErrors.has(message.id) && (
+                                // eslint-disable-next-line @next/next/no-img-element
+                                <img
                                   src={message.imageUrl}
                                   alt="Shared photo"
-                                  width={420}
-                                  height={320}
-                                  unoptimized
                                   className="chat-shared-image"
+                                  onError={() =>
+                                    void refreshChatImage(message.id, message.imageUrl!)
+                                  }
                                   onLoad={() =>
                                     chatMessagesEndRef.current?.scrollIntoView({ block: "end" })
                                   }
                                 />
+                              )}
+                              {chatImageErrors.has(message.id) && (
+                                <p className="chat-image-error">Photo could not be loaded. It may have been removed.</p>
                               )}
                               {message.createdAt && (
                                 <time className="chat-message-time">{formatChatTime(message.createdAt)}</time>
@@ -1608,19 +1664,31 @@ export default function Home() {
                           aria-label="Attach a photo from your library"
                           value=""
                           onChange={(event) => {
-                            const picked = images.find((image) => image.id === event.target.value);
-                            if (picked) {
-                              setChatAttachment({ id: picked.id, url: picked.url });
-                              chatTextareaRef.current?.focus();
-                            }
+                            const [imageId, versionId] = event.target.value.split(":");
+                            const picked = images.find((image) => image.id === imageId);
+                            if (!picked || !versionId) return;
+                            const version = picked.transformHistory?.find(
+                              (item) => item.id === versionId,
+                            );
+                            setChatAttachment({
+                              id: picked.id,
+                              versionId: versionId === "original" ? undefined : versionId,
+                              url: version?.url || picked.url,
+                            });
+                            chatTextareaRef.current?.focus();
                           }}
                           disabled={!chatReceiverId || chatUploading || chatSending}
                         >
                           <option value="">Library</option>
                           {images.map((image, index) => (
-                            <option key={image.id} value={image.id}>
-                              #{index + 1} · {image.metadata?.format?.toUpperCase() || "Image"} · {image.metadata?.width || "?"} × {image.metadata?.height || "?"}
-                            </option>
+                            <optgroup key={image.id} label={`Photo ${index + 1}`}>
+                              <option value={`${image.id}:original`}>Original</option>
+                              {image.transformHistory?.map((version) => (
+                                <option key={version.id} value={`${image.id}:${version.id}`}>
+                                  Edited · {version.metadata?.format?.toUpperCase() || "Image"} · {version.metadata?.width || "?"} × {version.metadata?.height || "?"}
+                                </option>
+                              ))}
+                            </optgroup>
                           ))}
                         </select>
                       </div>
@@ -1637,7 +1705,7 @@ export default function Home() {
                             event.nativeEvent.keyCode !== 229
                           ) {
                             event.preventDefault();
-                            void sendChatMessage();
+                            event.currentTarget.form?.requestSubmit();
                           }
                         }}
                         placeholder={chatReceiverId ? "Write a message… (Enter to send, Shift+Enter for new line)" : "Open a conversation to start messaging"}

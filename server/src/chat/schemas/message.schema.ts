@@ -19,6 +19,9 @@ export class Message {
   @Prop({ type: Types.ObjectId, ref: Image.name, default: null })
   imageId: Types.ObjectId | null;
 
+  @Prop({ default: null })
+  imageVersionId: string | null;
+
   @Prop({ default: false })
   isRead: boolean;
 

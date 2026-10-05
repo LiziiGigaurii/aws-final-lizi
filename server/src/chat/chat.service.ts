@@ -21,6 +21,7 @@ export class ChatService {
     receiverId: string;
     text?: string;
     imageId?: string;
+    imageVersionId?: string;
   }) {
     if (!Types.ObjectId.isValid(data.senderId)) {
       throw new BadRequestException('Sender ID is invalid');
@@ -40,6 +41,10 @@ export class ChatService {
     }
     const imageId = data.imageId ? new Types.ObjectId(data.imageId) : null;
 
+    if (data.imageVersionId && !imageId) {
+      throw new BadRequestException('An image version requires an image');
+    }
+
     if (!text && !imageId) {
       throw new BadRequestException(
         'Message must contain text, an image, or both',
@@ -51,6 +56,7 @@ export class ChatService {
       receiver: new Types.ObjectId(data.receiverId),
       text,
       imageId,
+      imageVersionId: data.imageVersionId || null,
       isRead: false,
     });
 
@@ -59,9 +65,20 @@ export class ChatService {
       .populate('sender', 'username')
       .populate('receiver', 'username')
       .populate('imageId');
-    if (imageId && !savedMessage?.imageId) {
+    const populatedImage = savedMessage?.imageId as unknown as {
+      originalKey?: string;
+      transformedKeys?: string[];
+      transformHistory?: { id: string; key: string }[];
+    } | null;
+    if (
+      imageId &&
+      (!populatedImage ||
+        (data.imageVersionId &&
+          data.imageVersionId !== 'original' &&
+          !this.getImageVersionKey(populatedImage, data.imageVersionId)))
+    ) {
       await this.messageModel.deleteOne({ _id: message._id });
-      throw new NotFoundException('Image not found');
+      throw new NotFoundException('Image or image version not found');
     }
     return this.withSignedImageUrl(savedMessage);
   }
@@ -129,12 +146,18 @@ export class ChatService {
 
     const populatedImage = message.imageId as unknown as {
       originalKey?: string;
+      transformedKeys?: string[];
+      transformHistory?: { id: string; key: string }[];
       toObject: () => Record<string, unknown>;
     } | null;
-    const imageId = populatedImage?.originalKey
+    const selectedKey = populatedImage
+      ? this.getImageVersionKey(populatedImage, message.imageVersionId || undefined)
+      : undefined;
+    const imageKey = selectedKey || populatedImage?.originalKey;
+    const imageId = imageKey && populatedImage
       ? {
           ...populatedImage.toObject(),
-          url: await this.storageService.getSignedUrl(populatedImage.originalKey),
+          url: await this.storageService.getSignedUrl(imageKey),
         }
       : message.imageId;
 
@@ -142,6 +165,24 @@ export class ChatService {
       ...message.toObject(),
       imageId,
     };
+  }
+
+  private getImageVersionKey(
+    image: {
+      transformedKeys?: string[];
+      transformHistory?: { id: string; key: string }[];
+    },
+    versionId?: string,
+  ) {
+    if (!versionId || versionId === 'original') return undefined;
+
+    const version = image.transformHistory?.find((item) => item.id === versionId);
+    if (version?.key) return version.key;
+
+    const legacyMatch = /^legacy-(\d+)$/.exec(versionId);
+    return legacyMatch
+      ? image.transformedKeys?.[Number(legacyMatch[1]) - 1]
+      : undefined;
   }
 
   async markConversationAsRead(currentUserId: string, otherUserId: string) {
