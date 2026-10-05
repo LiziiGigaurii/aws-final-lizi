@@ -105,7 +105,7 @@ function mapChatMessage(message: ChatApiMessage, currentUserId: string) {
   return {
     id: message._id,
     sender: chatUserId(message.sender) === currentUserId ? ("me" as const) : ("them" as const),
-    text: message.text || (message.imageId ? "Sent a photo" : ""),
+    text: message.text || (message.imageId && !imageUrl ? "Photo is no longer available" : ""),
     imageUrl,
     createdAt: message.createdAt,
     isRead: message.isRead,
@@ -318,7 +318,8 @@ export default function Home() {
   >([]);
   const [chatConversations, setChatConversations] = useState<ChatConversation[]>([]);
   const [chatInput, setChatInput] = useState("");
-  const [chatImageId, setChatImageId] = useState("");
+  const [chatAttachment, setChatAttachment] = useState<{ id: string; url: string } | null>(null);
+  const [chatUploading, setChatUploading] = useState(false);
   const [chatReceiverId, setChatReceiverId] = useState("");
   const [chatRecipientInput, setChatRecipientInput] = useState("");
   const [chatContactName, setChatContactName] = useState("");
@@ -330,6 +331,8 @@ export default function Home() {
   const socketRef = useRef<Socket | null>(null);
   const activeChatReceiverRef = useRef("");
   const chatMessagesEndRef = useRef<HTMLDivElement>(null);
+  const chatTextareaRef = useRef<HTMLTextAreaElement>(null);
+  const chatFileInput = useRef<HTMLInputElement>(null);
   const fileInput = useRef<HTMLInputElement>(null);
   const previewFrame = useRef<HTMLDivElement>(null);
   const cropInteraction = useRef<HTMLDivElement>(null);
@@ -1110,10 +1113,39 @@ export default function Home() {
       ? historyImage?.metadata
       : activeHistoryVersion?.metadata ?? historyImage?.metadata;
 
+  const attachChatPhoto = async (event: ChangeEvent<HTMLInputElement>) => {
+    const file = event.target.files?.[0];
+    event.target.value = "";
+    if (!file) return;
+    if (!file.type.startsWith("image/")) {
+      setChatError("Only image files can be shared in chat.");
+      return;
+    }
+
+    const form = new FormData();
+    form.append("file", file);
+    setChatUploading(true);
+    setChatError("");
+    try {
+      const uploaded = await apiRequest<{ id: string; url: string }>("/images", token, {
+        method: "POST",
+        body: form,
+      });
+      setChatAttachment({ id: String(uploaded.id), url: uploaded.url });
+      setRefreshKey((value) => value + 1);
+      chatTextareaRef.current?.focus();
+    } catch (error) {
+      setChatError(error instanceof Error ? error.message : "Photo could not be uploaded.");
+    } finally {
+      setChatUploading(false);
+    }
+  };
+
   const sendChatMessage = async () => {
+    if (chatSending || chatUploading) return;
     const trimmed = chatInput.trim();
-    const selectedImage = images.find((image) => image.id === chatImageId);
-    if (!chatReceiverId || (!trimmed && !selectedImage)) return;
+    const attachment = chatAttachment;
+    if (!chatReceiverId || (!trimmed && !attachment)) return;
 
     const socket = socketRef.current;
     if (!socket?.connected || chatConnection !== "online") {
@@ -1125,7 +1157,7 @@ export default function Home() {
       senderId: currentUserId,
       receiverId: chatReceiverId,
       text: trimmed || "",
-      imageId: selectedImage?.id,
+      imageId: attachment?.id,
     };
 
     setChatSending(true);
@@ -1151,11 +1183,12 @@ export default function Home() {
           : [...current, savedMessage],
       );
       setChatInput("");
-      setChatImageId("");
+      setChatAttachment(null);
     } catch (error) {
       setChatError(error instanceof Error ? error.message : "Message could not be sent.");
     } finally {
       setChatSending(false);
+      chatTextareaRef.current?.focus();
     }
   };
 
@@ -1196,8 +1229,9 @@ export default function Home() {
       }),
     );
     setChatInput("");
-    setChatImageId("");
+    setChatAttachment(null);
     setChatError("");
+    requestAnimationFrame(() => chatTextareaRef.current?.focus());
   };
 
   const openChatConversation = async () => {
@@ -1499,6 +1533,9 @@ export default function Home() {
                                   height={320}
                                   unoptimized
                                   className="chat-shared-image"
+                                  onLoad={() =>
+                                    chatMessagesEndRef.current?.scrollIntoView({ block: "end" })
+                                  }
                                 />
                               )}
                               {message.createdAt && (
@@ -1521,6 +1558,27 @@ export default function Home() {
                     </div>
 
                     {chatError && <p className="chat-error-banner" role="alert">{chatError}</p>}
+                    {(chatAttachment || chatUploading) && (
+                      <div className="chat-attachment-preview">
+                        {chatAttachment ? (
+                          // eslint-disable-next-line @next/next/no-img-element
+                          <img src={chatAttachment.url} alt="Photo to send" />
+                        ) : (
+                          <span className="chat-attachment-loading">Uploading…</span>
+                        )}
+                        <span>{chatUploading ? "Uploading photo" : "Photo ready to send"}</span>
+                        {chatAttachment && (
+                          <button
+                            type="button"
+                            className="chat-attachment-remove"
+                            onClick={() => setChatAttachment(null)}
+                            aria-label="Remove photo"
+                          >
+                            ×
+                          </button>
+                        )}
+                      </div>
+                    )}
                     <form
                       className="chat-composer"
                       onSubmit={(event) => {
@@ -1528,20 +1586,46 @@ export default function Home() {
                         void sendChatMessage();
                       }}
                     >
-                      <select
-                        aria-label="Attach an uploaded photo"
-                        value={chatImageId}
-                        onChange={(event) => setChatImageId(event.target.value)}
-                        disabled={!chatReceiverId}
-                      >
-                        <option value="">＋ Photo</option>
-                        {images.map((image) => (
-                          <option key={image.id} value={image.id}>
-                            {image.metadata?.format?.toUpperCase() || "Image"} · {image.metadata?.width || "?"} × {image.metadata?.height || "?"}
-                          </option>
-                        ))}
-                      </select>
+                      <div className="chat-attach-tools">
+                        <button
+                          type="button"
+                          className="chat-attach-button"
+                          onClick={() => chatFileInput.current?.click()}
+                          disabled={!chatReceiverId || chatUploading || chatSending}
+                          title="Upload a photo from your device"
+                          aria-label="Upload a photo from your device"
+                        >
+                          📎
+                        </button>
+                        <input
+                          ref={chatFileInput}
+                          type="file"
+                          accept="image/*"
+                          hidden
+                          onChange={(event) => void attachChatPhoto(event)}
+                        />
+                        <select
+                          aria-label="Attach a photo from your library"
+                          value=""
+                          onChange={(event) => {
+                            const picked = images.find((image) => image.id === event.target.value);
+                            if (picked) {
+                              setChatAttachment({ id: picked.id, url: picked.url });
+                              chatTextareaRef.current?.focus();
+                            }
+                          }}
+                          disabled={!chatReceiverId || chatUploading || chatSending}
+                        >
+                          <option value="">Library</option>
+                          {images.map((image, index) => (
+                            <option key={image.id} value={image.id}>
+                              #{index + 1} · {image.metadata?.format?.toUpperCase() || "Image"} · {image.metadata?.width || "?"} × {image.metadata?.height || "?"}
+                            </option>
+                          ))}
+                        </select>
+                      </div>
                       <textarea
+                        ref={chatTextareaRef}
                         aria-label="Write a message"
                         value={chatInput}
                         onChange={(event) => setChatInput(event.target.value)}
@@ -1549,20 +1633,21 @@ export default function Home() {
                           if (
                             event.key === "Enter" &&
                             !event.shiftKey &&
-                            !event.nativeEvent.isComposing
+                            !event.nativeEvent.isComposing &&
+                            event.nativeEvent.keyCode !== 229
                           ) {
                             event.preventDefault();
                             void sendChatMessage();
                           }
                         }}
-                        placeholder={chatReceiverId ? "Write a message..." : "Open a conversation to start messaging"}
+                        placeholder={chatReceiverId ? "Write a message… (Enter to send, Shift+Enter for new line)" : "Open a conversation to start messaging"}
                         rows={1}
-                        disabled={!chatReceiverId || chatSending}
+                        disabled={!chatReceiverId}
                       />
                       <button
                         className="button button-coral chat-send-button"
                         type="submit"
-                        disabled={!chatReceiverId || chatSending || (!chatInput.trim() && !chatImageId)}
+                        disabled={!chatReceiverId || chatSending || chatUploading || (!chatInput.trim() && !chatAttachment)}
                         aria-label="Send message"
                       >
                         {chatSending ? "Sending..." : "Send"} <span>↗</span>

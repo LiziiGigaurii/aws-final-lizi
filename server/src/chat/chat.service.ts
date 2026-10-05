@@ -35,10 +35,10 @@ export class ChatService {
     }
 
     const text = data.text?.trim() || '';
-    const imageId =
-      data.imageId && Types.ObjectId.isValid(data.imageId)
-        ? new Types.ObjectId(data.imageId)
-        : null;
+    if (data.imageId && !Types.ObjectId.isValid(data.imageId)) {
+      throw new BadRequestException('Image ID is invalid');
+    }
+    const imageId = data.imageId ? new Types.ObjectId(data.imageId) : null;
 
     if (!text && !imageId) {
       throw new BadRequestException(
@@ -59,6 +59,10 @@ export class ChatService {
       .populate('sender', 'username')
       .populate('receiver', 'username')
       .populate('imageId');
+    if (imageId && !savedMessage?.imageId) {
+      await this.messageModel.deleteOne({ _id: message._id });
+      throw new NotFoundException('Image not found');
+    }
     return this.withSignedImageUrl(savedMessage);
   }
 
