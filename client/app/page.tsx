@@ -69,6 +69,14 @@ type ChatUserRef =
   | null
   | undefined;
 
+type ChatAttachment = {
+  clientId: string;
+  id: string;
+  versionId?: string;
+  url: string;
+  name: string;
+};
+
 type ChatApiMessage = {
   _id: string;
   sender: ChatUserRef;
@@ -339,11 +347,7 @@ export default function Home() {
   } | null>(null);
   const [chatImageActionBusy, setChatImageActionBusy] = useState(false);
   const [chatInput, setChatInput] = useState("");
-  const [chatAttachment, setChatAttachment] = useState<{
-    id: string;
-    versionId?: string;
-    url: string;
-  } | null>(null);
+  const [chatAttachments, setChatAttachments] = useState<ChatAttachment[]>([]);
   const [chatUploading, setChatUploading] = useState(false);
   const [chatReceiverId, setChatReceiverId] = useState("");
   const [chatRecipientInput, setChatRecipientInput] = useState("");
@@ -1133,24 +1137,34 @@ export default function Home() {
       : activeHistoryVersion?.metadata ?? historyImage?.metadata;
 
   const attachChatPhoto = async (event: ChangeEvent<HTMLInputElement>) => {
-    const file = event.target.files?.[0];
+    const files = Array.from(event.target.files || []);
     event.target.value = "";
-    if (!file) return;
-    if (!file.type.startsWith("image/")) {
+    if (!files.length) return;
+    if (files.some((file) => !file.type.startsWith("image/"))) {
       setChatError("Only image files can be shared in chat.");
       return;
     }
 
-    const form = new FormData();
-    form.append("file", file);
     setChatUploading(true);
     setChatError("");
     try {
-      const uploaded = await apiRequest<{ id: string; url: string }>("/images", token, {
-        method: "POST",
-        body: form,
-      });
-      setChatAttachment({ id: String(uploaded.id), url: uploaded.url });
+      for (const file of files) {
+        const form = new FormData();
+        form.append("file", file);
+        const uploaded = await apiRequest<{ id: string; url: string }>("/images", token, {
+          method: "POST",
+          body: form,
+        });
+        setChatAttachments((current) => [
+          ...current,
+          {
+            clientId: crypto.randomUUID(),
+            id: String(uploaded.id),
+            url: uploaded.url,
+            name: file.name,
+          },
+        ]);
+      }
       setRefreshKey((value) => value + 1);
       chatTextareaRef.current?.focus();
     } catch (error) {
@@ -1163,8 +1177,8 @@ export default function Home() {
   const sendChatMessage = async () => {
     if (chatSending || chatUploading) return;
     const trimmed = chatInput.trim();
-    const attachment = chatAttachment;
-    if (!chatReceiverId || (!trimmed && !attachment)) return;
+    const attachments = chatAttachments;
+    if (!chatReceiverId || (!trimmed && !attachments.length)) return;
 
     const socket = socketRef.current;
     if (!socket?.connected || chatConnection !== "online") {
@@ -1172,38 +1186,53 @@ export default function Home() {
       return;
     }
 
-    const payload = {
-      senderId: currentUserId,
-      receiverId: chatReceiverId,
-      text: trimmed || "",
-      imageId: attachment?.id,
-      imageVersionId: attachment?.versionId,
-    };
-
     setChatSending(true);
     setChatError("");
     try {
-      const response = (await socket.timeout(10000).emitWithAck(
-        "send-message",
-        payload,
-      )) as {
-        status?: string;
-        message?: ChatApiMessage | string;
-      };
-      if (response.status !== "success" || !response.message || typeof response.message === "string") {
-        throw new Error(
-          typeof response.message === "string" ? response.message : "Message could not be sent.",
-        );
-      }
+      const sendOne = async (attachment?: ChatAttachment, text = "") => {
+        const response = (await socket.timeout(10000).emitWithAck("send-message", {
+          senderId: currentUserId,
+          receiverId: chatReceiverId,
+          text,
+          imageId: attachment?.id,
+          imageVersionId: attachment?.versionId,
+        })) as {
+          status?: string;
+          message?: ChatApiMessage | string;
+        };
+        if (
+          response.status !== "success" ||
+          !response.message ||
+          typeof response.message === "string"
+        ) {
+          throw new Error(
+            typeof response.message === "string"
+              ? response.message
+              : "Message could not be sent.",
+          );
+        }
 
-      const savedMessage = mapChatMessage(response.message, currentUserId);
-      setChatMessages((current) =>
-        current.some((message) => message.id === savedMessage.id)
-          ? current
-          : [...current, savedMessage],
-      );
+        const savedMessage = mapChatMessage(response.message, currentUserId);
+        setChatMessages((current) =>
+          current.some((message) => message.id === savedMessage.id)
+            ? current
+            : [...current, savedMessage],
+        );
+      };
+
+      if (attachments.length) {
+        for (let index = 0; index < attachments.length; index += 1) {
+          const attachment = attachments[index];
+          await sendOne(attachment, index === 0 ? trimmed : "");
+          setChatAttachments((current) =>
+            current.filter((item) => item.clientId !== attachment.clientId),
+          );
+          if (index === 0 && trimmed) setChatInput("");
+        }
+      } else {
+        await sendOne(undefined, trimmed);
+      }
       setChatInput("");
-      setChatAttachment(null);
     } catch (error) {
       setChatError(error instanceof Error ? error.message : "Message could not be sent.");
     } finally {
@@ -1351,7 +1380,7 @@ export default function Home() {
       }),
     );
     setChatInput("");
-    setChatAttachment(null);
+    setChatAttachments([]);
     setChatError("");
     requestAnimationFrame(() => chatTextareaRef.current?.focus());
   };
@@ -1716,24 +1745,29 @@ export default function Home() {
                     </div>
 
                     {chatError && <p className="chat-error-banner" role="alert">{chatError}</p>}
-                    {(chatAttachment || chatUploading) && (
+                    {(chatAttachments.length > 0 || chatUploading) && (
                       <div className="chat-attachment-preview">
-                        {chatAttachment ? (
-                          // eslint-disable-next-line @next/next/no-img-element
-                          <img src={chatAttachment.url} alt="Photo to send" />
-                        ) : (
+                        {chatAttachments.map((attachment) => (
+                          <div className="chat-attachment-card" key={attachment.clientId}>
+                            {/* eslint-disable-next-line @next/next/no-img-element */}
+                            <img src={attachment.url} alt="" />
+                            <span title={attachment.name}>{attachment.name}</span>
+                            <button
+                              type="button"
+                              className="chat-attachment-remove"
+                              onClick={() =>
+                                setChatAttachments((current) =>
+                                  current.filter((item) => item.clientId !== attachment.clientId),
+                                )
+                              }
+                              aria-label={`Remove ${attachment.name}`}
+                            >
+                              ×
+                            </button>
+                          </div>
+                        ))}
+                        {chatUploading && (
                           <span className="chat-attachment-loading">Uploading…</span>
-                        )}
-                        <span>{chatUploading ? "Uploading photo" : "Photo ready to send"}</span>
-                        {chatAttachment && (
-                          <button
-                            type="button"
-                            className="chat-attachment-remove"
-                            onClick={() => setChatAttachment(null)}
-                            aria-label="Remove photo"
-                          >
-                            ×
-                          </button>
                         )}
                       </div>
                     )}
@@ -1759,6 +1793,7 @@ export default function Home() {
                           ref={chatFileInput}
                           type="file"
                           accept="image/*"
+                          multiple
                           hidden
                           onChange={(event) => void attachChatPhoto(event)}
                         />
@@ -1772,11 +1807,22 @@ export default function Home() {
                             const version = picked.transformHistory?.find(
                               (item) => item.id === versionId,
                             );
-                            setChatAttachment({
+                            const attachment = {
+                              clientId: crypto.randomUUID(),
                               id: picked.id,
                               versionId: versionId === "original" ? undefined : versionId,
                               url: version?.url || picked.url,
-                            });
+                              name: `Photo ${images.findIndex((image) => image.id === picked.id) + 1} · ${versionId === "original" ? "Original" : "Edited"}`,
+                            };
+                            setChatAttachments((current) =>
+                              current.some(
+                                (item) =>
+                                  item.id === attachment.id &&
+                                  item.versionId === attachment.versionId,
+                              )
+                                ? current
+                                : [...current, attachment],
+                            );
                             chatTextareaRef.current?.focus();
                           }}
                           disabled={!chatReceiverId || chatUploading || chatSending}
@@ -1817,7 +1863,7 @@ export default function Home() {
                       <button
                         className="button button-coral chat-send-button"
                         type="submit"
-                        disabled={!chatReceiverId || chatSending || chatUploading || (!chatInput.trim() && !chatAttachment)}
+                        disabled={!chatReceiverId || chatSending || chatUploading || (!chatInput.trim() && !chatAttachments.length)}
                         aria-label="Send message"
                       >
                         {chatSending ? "Sending..." : "Send"} <span>↗</span>
