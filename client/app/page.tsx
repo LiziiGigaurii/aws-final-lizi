@@ -9,6 +9,7 @@ import {
   useState,
 } from "react";
 import Image from "next/image";
+import { io, Socket } from "socket.io-client";
 
 type ImageMetadata = {
   format?: string;
@@ -122,6 +123,21 @@ function cropSelectionForGesture(gesture: CropGesture): CropSelection {
 }
 
 const API_URL = "";
+const SOCKET_URL = process.env.NEXT_PUBLIC_SOCKET_URL || "http://localhost:5050";
+
+function decodeUserIdFromToken(token: string) {
+  try {
+    const payload = token.split(".")[1];
+    if (!payload) return "";
+    const normalized = payload.replace(/-/g, "+").replace(/_/g, "/");
+    const padded = normalized.padEnd(Math.ceil(normalized.length / 4) * 4, "=");
+    const json = atob(padded);
+    const data = JSON.parse(json) as { userId?: string };
+    return data.userId || "";
+  } catch {
+    return "";
+  }
+}
 
 async function apiRequest<T>(
   path: string,
@@ -248,16 +264,67 @@ export default function Home() {
   ]);
   const [chatInput, setChatInput] = useState("");
   const [chatImageId, setChatImageId] = useState("");
+  const [chatReceiverId, setChatReceiverId] = useState("");
+  const [currentUserId, setCurrentUserId] = useState("");
+  const socketRef = useRef<Socket | null>(null);
   const fileInput = useRef<HTMLInputElement>(null);
   const previewFrame = useRef<HTMLDivElement>(null);
   const cropInteraction = useRef<HTMLDivElement>(null);
   const toastTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   useEffect(() => {
-    setToken(localStorage.getItem("framehouse_token") || "");
+    const savedToken = localStorage.getItem("framehouse_token") || "";
+    const savedUserId = localStorage.getItem("framehouse_user_id") || "";
+    setToken(savedToken);
     setUsername(localStorage.getItem("framehouse_user") || "");
+    setCurrentUserId(savedUserId || decodeUserIdFromToken(savedToken));
     setReady(true);
   }, []);
+
+  useEffect(() => {
+    if (!ready || !token) {
+      if (socketRef.current) {
+        socketRef.current.disconnect();
+        socketRef.current = null;
+      }
+      return;
+    }
+
+    const userId = currentUserId || decodeUserIdFromToken(token);
+    if (!userId) return;
+
+    setCurrentUserId(userId);
+    const socket = io(SOCKET_URL, {
+      transports: ["websocket"],
+      autoConnect: true,
+    });
+
+    socketRef.current = socket;
+    socket.emit("join-room", { userId });
+    socket.on("new-message", (message) => {
+      const senderId = message?.sender?._id || message?.sender || "";
+      const imageUrl = message?.imageId?.url || message?.imageId?.originalKey || "";
+      setChatMessages((current) => {
+        const exists = current.some((entry) => entry.id === String(message?._id ?? message?.id));
+        if (exists) return current;
+        return [
+          ...current,
+          {
+            id: String(message?._id ?? message?.id ?? Date.now()),
+            sender: senderId === userId ? "me" : "them",
+            text: message?.text || (imageUrl ? "Sent a photo" : ""),
+            imageUrl: imageUrl || undefined,
+          },
+        ];
+      });
+    });
+
+    return () => {
+      socket.off("new-message");
+      socket.disconnect();
+      socketRef.current = null;
+    };
+  }, [ready, token, currentUserId]);
 
   useEffect(() => {
     const imageId = selectedImage?.id;
@@ -445,8 +512,11 @@ export default function Home() {
             body: JSON.stringify({ email: accountEmail, password }),
           },
         );
+        const decodedUserId = decodeUserIdFromToken(result.access_token);
         localStorage.setItem("framehouse_token", result.access_token);
         localStorage.setItem("framehouse_user", result.username);
+        localStorage.setItem("framehouse_user_id", decodedUserId || "");
+        setCurrentUserId(decodedUserId);
         setUsername(result.username);
         setToken(result.access_token);
       }
@@ -869,13 +939,33 @@ export default function Home() {
       ? historyImage?.metadata
       : activeHistoryVersion?.metadata ?? historyImage?.metadata;
 
-  const sendChatMessage = () => {
+  const sendChatMessage = async () => {
     const trimmed = chatInput.trim();
     const selectedImage = images.find((image) => image.id === chatImageId);
-    if (!trimmed && !selectedImage) return;
+    const receiverInput = chatReceiverId.trim();
+    if (!receiverInput || (!trimmed && !selectedImage)) return;
+
+    let resolvedReceiverId = receiverInput;
+    if (!/^[0-9a-fA-F]{24}$/.test(receiverInput)) {
+      const result = await apiRequest<{ id: string }>(
+        `/users/search?query=${encodeURIComponent(receiverInput)}`,
+        token,
+      );
+      resolvedReceiverId = result.id;
+      setChatReceiverId(result.id);
+    }
+
+    const payload = {
+      senderId: currentUserId,
+      receiverId: resolvedReceiverId,
+      text: trimmed || "",
+      imageId: selectedImage?.id,
+    };
+
+    socketRef.current?.emit("send-message", payload);
 
     const newMessage = {
-      id: `${Date.now()}`,
+      id: `local-${Date.now()}`,
       sender: "me" as const,
       text: trimmed || "Sent a photo",
       imageUrl: selectedImage?.url,
@@ -1026,7 +1116,9 @@ export default function Home() {
               onClick={() => {
                 localStorage.removeItem("framehouse_token");
                 localStorage.removeItem("framehouse_user");
+                localStorage.removeItem("framehouse_user_id");
                 setToken("");
+                setCurrentUserId("");
                 setImages([]);
               }}
             >
@@ -1417,6 +1509,18 @@ export default function Home() {
                   </div>
 
                   <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
+                    <input
+                      value={chatReceiverId}
+                      onChange={(event) => setChatReceiverId(event.target.value)}
+                      placeholder="username or email"
+                      style={{
+                        background: "rgba(255,255,255,0.05)",
+                        color: "#fff",
+                        border: "1px solid rgba(255,255,255,0.08)",
+                        borderRadius: 10,
+                        padding: "10px 12px",
+                      }}
+                    />
                     <select
                       value={chatImageId}
                       onChange={(event) => setChatImageId(event.target.value)}
@@ -1452,8 +1556,8 @@ export default function Home() {
                     <button
                       className="button button-dark"
                       type="button"
-                      onClick={sendChatMessage}
-                      disabled={!chatInput.trim() && !chatImageId}
+                      onClick={() => void sendChatMessage()}
+                      disabled={!chatReceiverId.trim() || (!chatInput.trim() && !chatImageId)}
                     >
                       Send message
                     </button>

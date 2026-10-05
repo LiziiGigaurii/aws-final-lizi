@@ -18,6 +18,18 @@ export class UsersService {
     return user;
   }
 
+  async findByUsernameOrEmail(query: string) {
+    const normalized = query.trim();
+    if (!normalized) return null;
+
+    return this.userModel.findOne({
+      $or: [
+        { username: { $regex: `^${normalized.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}$`, $options: 'i' } },
+        { email: { $regex: `^${normalized.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}$`, $options: 'i' } },
+      ],
+    });
+  }
+
   async create(username: string, email: string, hashedPassword: string) {
     const newUser = new this.userModel({
       username: username,
