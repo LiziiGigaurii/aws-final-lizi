@@ -77,6 +77,7 @@ type ChatApiMessage = {
   imageId?: string | { url?: string; originalKey?: string } | null;
   createdAt?: string;
   isRead?: boolean;
+  readAt?: string;
 };
 
 type ChatConversation = {
@@ -98,13 +99,17 @@ function chatUserName(user: ChatUserRef) {
 
 function mapChatMessage(message: ChatApiMessage, currentUserId: string) {
   const image = typeof message.imageId === "object" ? message.imageId : null;
-  const imageUrl = image?.url || image?.originalKey;
+  const imageUrl =
+    image?.url ||
+    (image?.originalKey?.startsWith("http") ? image.originalKey : undefined);
   return {
     id: message._id,
     sender: chatUserId(message.sender) === currentUserId ? ("me" as const) : ("them" as const),
-    text: message.text || (imageUrl ? "Sent a photo" : ""),
+    text: message.text || (message.imageId ? "Sent a photo" : ""),
     imageUrl,
     createdAt: message.createdAt,
+    isRead: message.isRead,
+    readAt: message.readAt,
   };
 }
 
@@ -309,7 +314,7 @@ export default function Home() {
     sepia: false,
   });
   const [chatMessages, setChatMessages] = useState<
-    { id: string; sender: "me" | "them"; text?: string; imageUrl?: string; createdAt?: string }[]
+    { id: string; sender: "me" | "them"; text?: string; imageUrl?: string; createdAt?: string; isRead?: boolean; readAt?: string }[]
   >([]);
   const [chatConversations, setChatConversations] = useState<ChatConversation[]>([]);
   const [chatInput, setChatInput] = useState("");
@@ -393,6 +398,24 @@ export default function Home() {
             ? current
             : [...current, nextMessage],
         );
+
+        if (senderId !== userId) {
+          void apiRequest<{ modifiedCount: number; readAt: string }>(
+            `/chat/conversation/${senderId}/read`,
+            token,
+            { method: "PATCH" },
+          )
+            .then(({ readAt }) => {
+              setChatMessages((current) =>
+                current.map((entry) =>
+                  entry.sender === "them"
+                    ? { ...entry, isRead: true, readAt }
+                    : entry,
+                ),
+              );
+            })
+            .catch(() => undefined);
+        }
       }
 
       void apiRequest<ChatApiMessage[]>("/chat/conversations", token)
@@ -411,12 +434,25 @@ export default function Home() {
         })
         .catch(() => undefined);
     };
+    const onMessagesRead = (receipt: { readerId?: string; readAt?: string }) => {
+      if (!receipt.readerId || receipt.readerId !== activeChatReceiverRef.current) return;
+      setChatMessages((current) =>
+        current.map((message) =>
+          message.sender === "me" &&
+          receipt.readAt &&
+          (!message.createdAt || Date.parse(message.createdAt) <= Date.parse(receipt.readAt))
+            ? { ...message, isRead: true, readAt: receipt.readAt }
+            : message,
+        ),
+      );
+    };
 
     socket.on("connect", onConnect);
     socket.on("disconnect", onDisconnect);
     socket.on("connect_error", onConnectError);
     socket.on("authenticated", onAuthenticated);
     socket.on("new-message", onNewMessage);
+    socket.on("messages-read", onMessagesRead);
     socket.connect();
 
     return () => {
@@ -425,6 +461,7 @@ export default function Home() {
       socket.off("connect_error", onConnectError);
       socket.off("authenticated", onAuthenticated);
       socket.off("new-message", onNewMessage);
+      socket.off("messages-read", onMessagesRead);
       socket.disconnect();
       socketRef.current = null;
     };
@@ -1127,9 +1164,37 @@ export default function Home() {
       `/chat/conversation/${receiverId}`,
       token,
     );
+    let readAt: string | undefined;
+    if (
+      messages.some(
+        (message) => chatUserId(message.sender) === receiverId && !message.isRead,
+      )
+    ) {
+      try {
+        const receipt = await apiRequest<{ modifiedCount: number; readAt: string }>(
+          `/chat/conversation/${receiverId}/read`,
+          token,
+          { method: "PATCH" },
+        );
+        readAt = receipt.readAt;
+        setChatError("");
+      } catch {
+        setChatError("Conversation opened, but read status could not be updated.");
+      }
+    } else {
+      setChatError("");
+    }
     setChatReceiverId(receiverId);
     setChatContactName(contactName);
-    setChatMessages(messages.map((message) => mapChatMessage(message, currentUserId)));
+    setChatMessages(
+      messages.map((message) => {
+        const mapped = mapChatMessage(message, currentUserId);
+        if (mapped.sender === "them" && !message.isRead && readAt) {
+          return { ...mapped, isRead: true, readAt };
+        }
+        return mapped;
+      }),
+    );
     setChatInput("");
     setChatImageId("");
     setChatError("");
@@ -1177,6 +1242,10 @@ export default function Home() {
       setChatBusy(false);
     }
   };
+
+  const lastReadMessageId = chatMessages
+    .filter((message) => message.sender === "me" && message.isRead)
+    .at(-1)?.id;
 
   if (!ready) return null;
 
@@ -1435,6 +1504,9 @@ export default function Home() {
                               {message.createdAt && (
                                 <time className="chat-message-time">{formatChatTime(message.createdAt)}</time>
                               )}
+                              {message.id === lastReadMessageId && message.readAt && (
+                                <span className="chat-read-receipt">Seen {formatChatTime(message.readAt)}</span>
+                              )}
                             </div>
                           </div>
                         ))
@@ -1473,6 +1545,16 @@ export default function Home() {
                         aria-label="Write a message"
                         value={chatInput}
                         onChange={(event) => setChatInput(event.target.value)}
+                        onKeyDown={(event) => {
+                          if (
+                            event.key === "Enter" &&
+                            !event.shiftKey &&
+                            !event.nativeEvent.isComposing
+                          ) {
+                            event.preventDefault();
+                            void sendChatMessage();
+                          }
+                        }}
                         placeholder={chatReceiverId ? "Write a message..." : "Open a conversation to start messaging"}
                         rows={1}
                         disabled={!chatReceiverId || chatSending}

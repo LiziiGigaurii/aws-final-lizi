@@ -61,6 +61,13 @@ export class ChatGateway {
     this.logger.log(`Client disconnected: ${client.id}`);
   }
 
+  emitReadReceipt(recipientId: string, readerId: string, readAt: Date) {
+    this.server.to(`user:${recipientId}`).emit('messages-read', {
+      readerId,
+      readAt,
+    });
+  }
+
   @SubscribeMessage('send-message')
   async handleSendMessage(
     @ConnectedSocket() client: Socket,

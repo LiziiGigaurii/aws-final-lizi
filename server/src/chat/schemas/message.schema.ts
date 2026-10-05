@@ -21,6 +21,9 @@ export class Message {
 
   @Prop({ default: false })
   isRead: boolean;
+
+  @Prop({ default: null })
+  readAt: Date | null;
 }
 
 export const MessageSchema = SchemaFactory.createForClass(Message);

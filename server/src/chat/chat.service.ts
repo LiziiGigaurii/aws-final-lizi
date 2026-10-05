@@ -5,6 +5,7 @@ import {
 } from '@nestjs/common';
 import { InjectModel } from '@nestjs/mongoose';
 import { Model, Types } from 'mongoose';
+import { StorageService } from '../storage/storage.service';
 import { Message, MessageDocument } from './schemas/message.schema';
 
 @Injectable()
@@ -12,6 +13,7 @@ export class ChatService {
   constructor(
     @InjectModel(Message.name)
     private readonly messageModel: Model<MessageDocument>,
+    private readonly storageService: StorageService,
   ) {}
 
   async createMessage(data: {
@@ -52,11 +54,12 @@ export class ChatService {
       isRead: false,
     });
 
-    return this.messageModel
+    const savedMessage = await this.messageModel
       .findById(message._id)
       .populate('sender', 'username')
       .populate('receiver', 'username')
       .populate('imageId');
+    return this.withSignedImageUrl(savedMessage);
   }
 
   async getConversation(userA: string, userB: string) {
@@ -80,7 +83,7 @@ export class ChatService {
       .populate('receiver', 'username')
       .populate('imageId');
 
-    return messages;
+    return Promise.all(messages.map((message) => this.withSignedImageUrl(message)));
   }
 
   async getUserChats(userId: string) {
@@ -110,7 +113,31 @@ export class ChatService {
       }
     }
 
-    return Array.from(conversations.values());
+    return Promise.all(
+      Array.from(conversations.values()).map((message) =>
+        this.withSignedImageUrl(message),
+      ),
+    );
+  }
+
+  private async withSignedImageUrl(message: MessageDocument | null) {
+    if (!message) return message;
+
+    const populatedImage = message.imageId as unknown as {
+      originalKey?: string;
+      toObject: () => Record<string, unknown>;
+    } | null;
+    const imageId = populatedImage?.originalKey
+      ? {
+          ...populatedImage.toObject(),
+          url: await this.storageService.getSignedUrl(populatedImage.originalKey),
+        }
+      : message.imageId;
+
+    return {
+      ...message.toObject(),
+      imageId,
+    };
   }
 
   async markConversationAsRead(currentUserId: string, otherUserId: string) {
@@ -122,17 +149,19 @@ export class ChatService {
       throw new BadRequestException('Other user ID is invalid');
     }
 
+    const readAt = new Date();
     const result = await this.messageModel.updateMany(
       {
         sender: new Types.ObjectId(otherUserId),
         receiver: new Types.ObjectId(currentUserId),
         isRead: false,
       },
-      { isRead: true },
+      { $set: { isRead: true, readAt } },
     );
 
     return {
       modifiedCount: result.modifiedCount,
+      readAt,
     };
   }
 }
