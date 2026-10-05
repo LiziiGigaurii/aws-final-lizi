@@ -63,6 +63,63 @@ type Album = {
   imageCount: number;
 };
 
+type ChatUserRef =
+  | string
+  | { _id?: string; id?: string; username?: string; email?: string }
+  | null
+  | undefined;
+
+type ChatApiMessage = {
+  _id: string;
+  sender: ChatUserRef;
+  receiver?: ChatUserRef;
+  text?: string;
+  imageId?: string | { url?: string; originalKey?: string } | null;
+  createdAt?: string;
+  isRead?: boolean;
+};
+
+type ChatConversation = {
+  userId: string;
+  username: string;
+  preview: string;
+  createdAt?: string;
+};
+
+function chatUserId(user: ChatUserRef) {
+  if (typeof user === "string") return user;
+  return user?._id || user?.id || "";
+}
+
+function chatUserName(user: ChatUserRef) {
+  if (typeof user === "string" || !user) return "";
+  return user.username || user.email || "";
+}
+
+function mapChatMessage(message: ChatApiMessage, currentUserId: string) {
+  const image = typeof message.imageId === "object" ? message.imageId : null;
+  const imageUrl = image?.url || image?.originalKey;
+  return {
+    id: message._id,
+    sender: chatUserId(message.sender) === currentUserId ? ("me" as const) : ("them" as const),
+    text: message.text || (imageUrl ? "Sent a photo" : ""),
+    imageUrl,
+    createdAt: message.createdAt,
+  };
+}
+
+function formatChatTime(value?: string) {
+  if (!value) return "";
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime())) return "";
+  return new Intl.DateTimeFormat(undefined, {
+    month: "short",
+    day: "numeric",
+    hour: "numeric",
+    minute: "2-digit",
+  }).format(date);
+}
+
 type CropSelection = { x: number; y: number; width: number; height: number };
 type CropGestureMode =
   | "draw"
@@ -122,8 +179,11 @@ function cropSelectionForGesture(gesture: CropGesture): CropSelection {
   };
 }
 
-const API_URL = "";
-const SOCKET_URL = process.env.NEXT_PUBLIC_SOCKET_URL || "http://localhost:5050";
+const API_URL =
+  process.env.NEXT_PUBLIC_API_URL ||
+  (process.env.NODE_ENV === "development" ? "http://localhost:5050" : "");
+const SOCKET_URL =
+  process.env.NEXT_PUBLIC_SOCKET_URL || process.env.NEXT_PUBLIC_API_URL || "";
 
 function decodeUserIdFromToken(token: string) {
   try {
@@ -249,8 +309,9 @@ export default function Home() {
     sepia: false,
   });
   const [chatMessages, setChatMessages] = useState<
-    { id: string; sender: "me" | "them"; text?: string; imageUrl?: string }[]
+    { id: string; sender: "me" | "them"; text?: string; imageUrl?: string; createdAt?: string }[]
   >([]);
+  const [chatConversations, setChatConversations] = useState<ChatConversation[]>([]);
   const [chatInput, setChatInput] = useState("");
   const [chatImageId, setChatImageId] = useState("");
   const [chatReceiverId, setChatReceiverId] = useState("");
@@ -258,12 +319,18 @@ export default function Home() {
   const [chatContactName, setChatContactName] = useState("");
   const [chatError, setChatError] = useState("");
   const [chatBusy, setChatBusy] = useState(false);
+  const [chatSending, setChatSending] = useState(false);
+  const [chatConnection, setChatConnection] = useState<"connecting" | "online" | "offline">("connecting");
   const [currentUserId, setCurrentUserId] = useState("");
   const socketRef = useRef<Socket | null>(null);
+  const activeChatReceiverRef = useRef("");
+  const chatMessagesEndRef = useRef<HTMLDivElement>(null);
   const fileInput = useRef<HTMLInputElement>(null);
   const previewFrame = useRef<HTMLDivElement>(null);
   const cropInteraction = useRef<HTMLDivElement>(null);
   const toastTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  activeChatReceiverRef.current = chatReceiverId;
 
   useEffect(() => {
     const savedToken = localStorage.getItem("framehouse_token") || "";
@@ -287,37 +354,111 @@ export default function Home() {
     if (!userId) return;
 
     setCurrentUserId(userId);
-    const socket = io(SOCKET_URL, {
+    const socket = io(
+      SOCKET_URL ||
+        (process.env.NODE_ENV === "development"
+          ? "http://localhost:5050"
+          : window.location.origin),
+      {
+      auth: { token },
       transports: ["websocket"],
-      autoConnect: true,
-    });
+      autoConnect: false,
+      },
+    );
 
     socketRef.current = socket;
-    socket.emit("join-room", { userId });
-    socket.on("new-message", (message) => {
-      const senderId = message?.sender?._id || message?.sender || "";
-      const imageUrl = message?.imageId?.url || message?.imageId?.originalKey || "";
-      setChatMessages((current) => {
-        const exists = current.some((entry) => entry.id === String(message?._id ?? message?.id));
-        if (exists) return current;
-        return [
-          ...current,
-          {
-            id: String(message?._id ?? message?.id ?? Date.now()),
-            sender: senderId === userId ? "me" : "them",
-            text: message?.text || (imageUrl ? "Sent a photo" : ""),
-            imageUrl: imageUrl || undefined,
-          },
-        ];
-      });
-    });
+    setChatConnection("connecting");
+    const onConnect = () => setChatConnection("connecting");
+    const onAuthenticated = (response: { status?: string; userId?: string }) => {
+      setChatConnection(
+        response?.status === "joined" && response.userId === userId
+          ? "online"
+          : "offline",
+      );
+    };
+    const onDisconnect = () => setChatConnection("offline");
+    const onConnectError = () => setChatConnection("offline");
+    const onNewMessage = (message: ChatApiMessage) => {
+      const senderId = chatUserId(message.sender);
+      const receiverId = chatUserId(message.receiver);
+      const activeReceiverId = activeChatReceiverRef.current;
+      const belongsToOpenConversation =
+        (senderId === userId && receiverId === activeReceiverId) ||
+        (senderId === activeReceiverId && receiverId === userId);
+
+      if (belongsToOpenConversation) {
+        const nextMessage = mapChatMessage(message, userId);
+        setChatMessages((current) =>
+          current.some((entry) => entry.id === nextMessage.id)
+            ? current
+            : [...current, nextMessage],
+        );
+      }
+
+      void apiRequest<ChatApiMessage[]>("/chat/conversations", token)
+        .then((latestMessages) => {
+          setChatConversations(
+            latestMessages.map((latest) => {
+              const peer = chatUserId(latest.sender) === userId ? latest.receiver : latest.sender;
+              return {
+                userId: chatUserId(peer),
+                username: chatUserName(peer) || "User",
+                preview: latest.text || (latest.imageId ? "Shared a photo" : "New message"),
+                createdAt: latest.createdAt,
+              };
+            }).filter((conversation) => conversation.userId),
+          );
+        })
+        .catch(() => undefined);
+    };
+
+    socket.on("connect", onConnect);
+    socket.on("disconnect", onDisconnect);
+    socket.on("connect_error", onConnectError);
+    socket.on("authenticated", onAuthenticated);
+    socket.on("new-message", onNewMessage);
+    socket.connect();
 
     return () => {
-      socket.off("new-message");
+      socket.off("connect", onConnect);
+      socket.off("disconnect", onDisconnect);
+      socket.off("connect_error", onConnectError);
+      socket.off("authenticated", onAuthenticated);
+      socket.off("new-message", onNewMessage);
       socket.disconnect();
       socketRef.current = null;
     };
   }, [ready, token, currentUserId]);
+
+  useEffect(() => {
+    if (!ready || !token || activeTab !== "chat") return;
+    let cancelled = false;
+    void apiRequest<ChatApiMessage[]>("/chat/conversations", token)
+      .then((latestMessages) => {
+        if (cancelled) return;
+        setChatConversations(
+          latestMessages.map((latest) => {
+            const peer = chatUserId(latest.sender) === currentUserId ? latest.receiver : latest.sender;
+            return {
+              userId: chatUserId(peer),
+              username: chatUserName(peer) || "User",
+              preview: latest.text || (latest.imageId ? "Shared a photo" : "No messages yet"),
+              createdAt: latest.createdAt,
+            };
+          }).filter((conversation) => conversation.userId),
+        );
+      })
+      .catch((error) => {
+        if (!cancelled) setChatError(error instanceof Error ? error.message : "Could not load messages.");
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [activeTab, currentUserId, ready, token]);
+
+  useEffect(() => {
+    chatMessagesEndRef.current?.scrollIntoView({ behavior: "smooth", block: "end" });
+  }, [chatMessages, chatReceiverId]);
 
   useEffect(() => {
     const imageId = selectedImage?.id;
@@ -937,6 +1078,12 @@ export default function Home() {
     const selectedImage = images.find((image) => image.id === chatImageId);
     if (!chatReceiverId || (!trimmed && !selectedImage)) return;
 
+    const socket = socketRef.current;
+    if (!socket?.connected || chatConnection !== "online") {
+      setChatError("Live chat is disconnected. Reconnect and try again.");
+      return;
+    }
+
     const payload = {
       senderId: currentUserId,
       receiverId: chatReceiverId,
@@ -944,18 +1091,48 @@ export default function Home() {
       imageId: selectedImage?.id,
     };
 
-    socketRef.current?.emit("send-message", payload);
+    setChatSending(true);
+    setChatError("");
+    try {
+      const response = (await socket.timeout(10000).emitWithAck(
+        "send-message",
+        payload,
+      )) as {
+        status?: string;
+        message?: ChatApiMessage | string;
+      };
+      if (response.status !== "success" || !response.message || typeof response.message === "string") {
+        throw new Error(
+          typeof response.message === "string" ? response.message : "Message could not be sent.",
+        );
+      }
 
-    const newMessage = {
-      id: `local-${Date.now()}`,
-      sender: "me" as const,
-      text: trimmed || "Sent a photo",
-      imageUrl: selectedImage?.url,
-    };
+      const savedMessage = mapChatMessage(response.message, currentUserId);
+      setChatMessages((current) =>
+        current.some((message) => message.id === savedMessage.id)
+          ? current
+          : [...current, savedMessage],
+      );
+      setChatInput("");
+      setChatImageId("");
+    } catch (error) {
+      setChatError(error instanceof Error ? error.message : "Message could not be sent.");
+    } finally {
+      setChatSending(false);
+    }
+  };
 
-    setChatMessages((current) => [...current, newMessage]);
+  const loadChatConversation = async (receiverId: string, contactName: string) => {
+    const messages = await apiRequest<ChatApiMessage[]>(
+      `/chat/conversation/${receiverId}`,
+      token,
+    );
+    setChatReceiverId(receiverId);
+    setChatContactName(contactName);
+    setChatMessages(messages.map((message) => mapChatMessage(message, currentUserId)));
     setChatInput("");
     setChatImageId("");
+    setChatError("");
   };
 
   const openChatConversation = async () => {
@@ -973,41 +1150,28 @@ export default function Home() {
       if (recipient.id === currentUserId) {
         throw new Error("You cannot start a conversation with yourself.");
       }
-
-      const messages = await apiRequest<
-        {
-          _id: string;
-          sender: { _id?: string } | string;
-          text?: string;
-          imageId?: { url?: string; originalKey?: string } | string | null;
-        }[]
-      >(`/chat/conversation/${recipient.id}`, token);
-
-      setChatReceiverId(recipient.id);
-      setChatContactName(recipient.username || recipient.email || query);
-      setChatMessages(
-        messages.map((message) => {
-          const senderId =
-            typeof message.sender === "string"
-              ? message.sender
-              : message.sender?._id || "";
-          const image =
-            typeof message.imageId === "object" ? message.imageId : null;
-          const imageUrl = image?.url || image?.originalKey;
-          return {
-            id: message._id,
-            sender: senderId === currentUserId ? "me" : "them",
-            text: message.text || (imageUrl ? "Sent a photo" : ""),
-            imageUrl,
-          };
-        }),
+      await loadChatConversation(
+        recipient.id,
+        recipient.username || recipient.email || query,
       );
     } catch (error) {
-      setChatReceiverId("");
-      setChatContactName("");
-      setChatMessages([]);
       setChatError(
         error instanceof Error ? error.message : "Unable to open this conversation.",
+      );
+    } finally {
+      setChatBusy(false);
+    }
+  };
+
+  const openExistingConversation = async (conversation: ChatConversation) => {
+    setChatBusy(true);
+    setChatError("");
+    try {
+      setChatRecipientInput(conversation.username);
+      await loadChatConversation(conversation.userId, conversation.username);
+    } catch (error) {
+      setChatError(
+        error instanceof Error ? error.message : "Unable to load this conversation.",
       );
     } finally {
       setChatBusy(false);
@@ -1182,10 +1346,49 @@ export default function Home() {
                     <span className="eyebrow">FRAMEHOUSE / MESSAGES</span>
                     <h1>Conversations<span>.</span></h1>
                   </div>
-                  <div className="chat-presence"><span /> Live chat</div>
+                  <div className={`chat-presence ${chatConnection}`}>
+                    <span />
+                    {chatConnection === "online"
+                      ? "Live chat"
+                      : chatConnection === "connecting"
+                        ? "Connecting"
+                        : "Offline"}
+                  </div>
                 </header>
                 <section className="chat-page">
-                  <div className="chat-surface">
+                  <div className="chat-layout">
+                    <aside className="chat-inbox">
+                      <div className="chat-inbox-heading">
+                        <strong>Messages</strong>
+                        <span>{chatConversations.length}</span>
+                      </div>
+                      <div className="chat-conversation-list">
+                        {chatConversations.map((conversation) => (
+                          <button
+                            className={`chat-conversation-item${conversation.userId === chatReceiverId ? " active" : ""}`}
+                            key={conversation.userId}
+                            type="button"
+                            onClick={() => void openExistingConversation(conversation)}
+                            disabled={chatBusy}
+                          >
+                            <span className="chat-conversation-avatar">
+                              {conversation.username.slice(0, 1).toUpperCase()}
+                            </span>
+                            <span className="chat-conversation-details">
+                              <span className="chat-conversation-line">
+                                <strong>{conversation.username}</strong>
+                                <time>{formatChatTime(conversation.createdAt)}</time>
+                              </span>
+                              <span className="chat-conversation-preview">{conversation.preview}</span>
+                            </span>
+                          </button>
+                        ))}
+                        {chatConversations.length === 0 && (
+                          <p className="chat-inbox-empty">Your conversations will appear here.</p>
+                        )}
+                      </div>
+                    </aside>
+                    <div className="chat-surface">
                     <header className="chat-conversation-header">
                       <div className="chat-contact-mark">
                         {chatContactName ? chatContactName.slice(0, 1).toUpperCase() : "F"}
@@ -1214,13 +1417,7 @@ export default function Home() {
                     </header>
 
                     <div className="chat-messages" aria-live="polite">
-                      {chatError ? (
-                        <div className="chat-empty-state chat-error-state">
-                          <span>!</span>
-                          <strong>Conversation not available</strong>
-                          <p>{chatError}</p>
-                        </div>
-                      ) : chatMessages.length ? (
+                      {chatMessages.length ? (
                         chatMessages.map((message) => (
                           <div className={`chat-message-row ${message.sender}`} key={message.id}>
                             <div className="chat-message-bubble">
@@ -1235,6 +1432,9 @@ export default function Home() {
                                   className="chat-shared-image"
                                 />
                               )}
+                              {message.createdAt && (
+                                <time className="chat-message-time">{formatChatTime(message.createdAt)}</time>
+                              )}
                             </div>
                           </div>
                         ))
@@ -1245,8 +1445,10 @@ export default function Home() {
                           <p>{chatContactName ? "Send a message or share a photo from your library." : "Enter an existing username or email above to open a private conversation."}</p>
                         </div>
                       )}
+                      <div ref={chatMessagesEndRef} />
                     </div>
 
+                    {chatError && <p className="chat-error-banner" role="alert">{chatError}</p>}
                     <form
                       className="chat-composer"
                       onSubmit={(event) => {
@@ -1273,17 +1475,18 @@ export default function Home() {
                         onChange={(event) => setChatInput(event.target.value)}
                         placeholder={chatReceiverId ? "Write a message..." : "Open a conversation to start messaging"}
                         rows={1}
-                        disabled={!chatReceiverId}
+                        disabled={!chatReceiverId || chatSending}
                       />
                       <button
                         className="button button-coral chat-send-button"
                         type="submit"
-                        disabled={!chatReceiverId || (!chatInput.trim() && !chatImageId)}
+                        disabled={!chatReceiverId || chatSending || (!chatInput.trim() && !chatImageId)}
                         aria-label="Send message"
                       >
-                        Send <span>↗</span>
+                        {chatSending ? "Sending..." : "Send"} <span>↗</span>
                       </button>
                     </form>
+                    </div>
                   </div>
                 </section>
               </>

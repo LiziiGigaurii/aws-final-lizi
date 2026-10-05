@@ -95,14 +95,16 @@ export class ChatService {
         $or: [{ sender: objectId }, { receiver: objectId }],
       })
       .sort({ createdAt: -1 })
-      .populate('sender', 'username')
-      .populate('receiver', 'username')
+      .populate('sender', 'username email')
+      .populate('receiver', 'username email')
       .populate('imageId');
 
     const conversations = new Map<string, any>();
 
     for (const message of messages) {
-      const peerId = message.sender.toString() === userId ? message.receiver.toString() : message.sender.toString();
+      const senderId = String((message.sender as any)?._id ?? message.sender);
+      const receiverId = String((message.receiver as any)?._id ?? message.receiver);
+      const peerId = senderId === userId ? receiverId : senderId;
       if (!conversations.has(peerId)) {
         conversations.set(peerId, message);
       }

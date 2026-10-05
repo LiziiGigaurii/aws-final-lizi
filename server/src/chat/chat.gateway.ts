@@ -1,4 +1,5 @@
 import { Logger } from '@nestjs/common';
+import { JwtService } from '@nestjs/jwt';
 import {
   ConnectedSocket,
   MessageBody,
@@ -9,9 +10,14 @@ import {
 import { Server, Socket } from 'socket.io';
 import { ChatService } from './chat.service';
 
+const socketOrigins = process.env.CLIENT_URL
+  ?.split(',')
+  .map((origin) => origin.trim())
+  .filter(Boolean) ?? ['http://localhost:3000', 'http://127.0.0.1:3000'];
+
 @WebSocketGateway({
   cors: {
-    origin: '*',
+    origin: socketOrigins,
   },
 })
 export class ChatGateway {
@@ -20,32 +26,39 @@ export class ChatGateway {
   @WebSocketServer()
   server: Server;
 
-  constructor(private readonly chatService: ChatService) {}
+  constructor(
+    private readonly chatService: ChatService,
+    private readonly jwtService: JwtService,
+  ) {}
 
-  handleConnection(client: Socket) {
-    this.logger.log(`Client connected: ${client.id}`);
+  async handleConnection(client: Socket) {
+    const token = client.handshake.auth?.token;
+    if (typeof token !== 'string' || !token) {
+      client.disconnect(true);
+      return;
+    }
+
+    try {
+      const payload = await this.jwtService.verifyAsync<{ userId?: string }>(token);
+      if (!payload.userId) {
+        client.disconnect(true);
+        return;
+      }
+
+      client.data.userId = payload.userId;
+      await client.join(`user:${payload.userId}`);
+      client.emit('authenticated', {
+        status: 'joined',
+        userId: payload.userId,
+      });
+      this.logger.log(`Authenticated client connected: ${client.id}`);
+    } catch {
+      client.disconnect(true);
+    }
   }
 
   handleDisconnect(client: Socket) {
     this.logger.log(`Client disconnected: ${client.id}`);
-  }
-
-  @SubscribeMessage('join-room')
-  handleJoinRoom(
-    @ConnectedSocket() client: Socket,
-    @MessageBody() payload: { userId: string },
-  ) {
-    if (!payload?.userId) {
-      return { status: 'error', message: 'userId is required' };
-    }
-
-    client.join(`user:${payload.userId}`);
-    client.data.userId = payload.userId;
-
-    return {
-      status: 'joined',
-      room: `user:${payload.userId}`,
-    };
   }
 
   @SubscribeMessage('send-message')
@@ -59,6 +72,14 @@ export class ChatGateway {
       imageId?: string;
     },
   ) {
+    const joinedUserId = client.data.userId as string | undefined;
+    if (!joinedUserId) {
+      return {
+        status: 'error',
+        message: 'Join your user room before sending messages',
+      };
+    }
+
     if (!payload?.senderId || !payload?.receiverId) {
       return {
         status: 'error',
@@ -66,14 +87,28 @@ export class ChatGateway {
       };
     }
 
-    const message = await this.chatService.createMessage(payload);
+    if (payload.senderId !== joinedUserId) {
+      return {
+        status: 'error',
+        message: 'Sender does not match the connected user',
+      };
+    }
 
-    this.server.to(`user:${payload.senderId}`).emit('new-message', message);
-    this.server.to(`user:${payload.receiverId}`).emit('new-message', message);
+    try {
+      const message = await this.chatService.createMessage(payload);
 
-    return {
-      status: 'success',
-      message,
-    };
+      this.server.to(`user:${joinedUserId}`).emit('new-message', message);
+      this.server.to(`user:${payload.receiverId}`).emit('new-message', message);
+
+      return {
+        status: 'success',
+        message,
+      };
+    } catch (error) {
+      return {
+        status: 'error',
+        message: error instanceof Error ? error.message : 'Message could not be sent',
+      };
+    }
   }
 }
