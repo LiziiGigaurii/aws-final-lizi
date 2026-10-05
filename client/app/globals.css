@@ -216,7 +216,7 @@ button:disabled { cursor: not-allowed; opacity: .55; }
 .shared-photo-dialog .action-dialog-actions { margin-top: 0; }
 .chat-gallery-dialog { position: relative; display: flex; flex-direction: column; width: min(920px, 100%); max-height: calc(100vh - 32px); overflow: hidden; padding: 28px; background: var(--paper); box-shadow: 0 24px 70px rgba(0,0,0,.24); }
 .chat-gallery-dialog h2 { flex: 0 0 auto; margin: 8px 0 20px; color: var(--ink); font: 600 23px 'Space Grotesk',sans-serif; }
-.chat-gallery-grid { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 10px; min-height: 0; overflow-y: auto; }
+.chat-gallery-grid { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 16px; min-height: 0; overflow-y: auto; }
 .chat-gallery-image-button { position: relative; display: block; width: 100%; aspect-ratio: 1; overflow: hidden; padding: 0; border: 0; border-radius: 10px; background: #18211e; }
 .chat-gallery-image-button img { display: block; width: 100%; height: 100%; object-fit: contain; }
 .chat-gallery-image-button > span { position: absolute; right: 8px; bottom: 8px; display: grid; place-items: center; width: 24px; height: 24px; border-radius: 50%; background: rgba(24,33,30,.7); color: #fff; font-size: 10px; }
@@ -243,7 +243,7 @@ button:disabled { cursor: not-allowed; opacity: .55; }
   .shared-photo-dialog { padding: 24px 20px; }
   .shared-photo-dialog-image { height: min(42vh, 300px); }
   .chat-gallery-dialog { padding: 24px 18px; }
-  .chat-gallery-grid { grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 7px; }
+  .chat-gallery-grid { grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 12px; }
   .chat-composer { grid-template-columns: minmax(0, 1fr) auto; gap: 8px; padding: 10px; }
   .chat-attach-tools { grid-column: 1 / -1; }
   .chat-attachment-preview { padding-right: 10px; padding-left: 10px; }
