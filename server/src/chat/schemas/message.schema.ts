@@ -19,13 +19,13 @@ export class Message {
   @Prop({ type: Types.ObjectId, ref: Image.name, default: null })
   imageId: Types.ObjectId | null;
 
-  @Prop({ default: null })
+  @Prop({ type: String, default: null })
   imageVersionId: string | null;
 
   @Prop({ default: false })
   isRead: boolean;
 
-  @Prop({ default: null })
+  @Prop({ type: Date, default: null })
   readAt: Date | null;
 }
 
