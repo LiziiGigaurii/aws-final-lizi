@@ -232,6 +232,22 @@ export default function Home() {
     flip: false,
     sepia: false,
   });
+  const [chatMessages, setChatMessages] = useState<
+    { id: string; sender: "me" | "them"; text?: string; imageUrl?: string }[]
+  >([
+    {
+      id: "welcome",
+      sender: "them",
+      text: "Hi! Your chat is live now.",
+    },
+    {
+      id: "welcome-2",
+      sender: "me",
+      text: "Awesome — I can send text and attached photos here.",
+    },
+  ]);
+  const [chatInput, setChatInput] = useState("");
+  const [chatImageId, setChatImageId] = useState("");
   const fileInput = useRef<HTMLInputElement>(null);
   const previewFrame = useRef<HTMLDivElement>(null);
   const cropInteraction = useRef<HTMLDivElement>(null);
@@ -853,6 +869,23 @@ export default function Home() {
       ? historyImage?.metadata
       : activeHistoryVersion?.metadata ?? historyImage?.metadata;
 
+  const sendChatMessage = () => {
+    const trimmed = chatInput.trim();
+    const selectedImage = images.find((image) => image.id === chatImageId);
+    if (!trimmed && !selectedImage) return;
+
+    const newMessage = {
+      id: `${Date.now()}`,
+      sender: "me" as const,
+      text: trimmed || "Sent a photo",
+      imageUrl: selectedImage?.url,
+    };
+
+    setChatMessages((current) => [...current, newMessage]);
+    setChatInput("");
+    setChatImageId("");
+  };
+
   if (!ready) return null;
 
   return (
@@ -1090,215 +1123,343 @@ export default function Home() {
               </div>
             </section>
             <section className="library-section">
-              <div className="section-heading">
-                <div>
-                  <span className="eyebrow">
-                    {activeTab === "albums" ? "YOUR ALBUMS" : "YOUR COLLECTION"}
-                  </span>
-                  <h2>
-                    {activeTab === "albums"
-                      ? openAlbumId
-                        ? albums.find((album) => album.id === openAlbumId)?.name || "Album"
-                        : "Your albums"
-                      : activeTab === "favorites"
-                        ? "Favorite frames"
-                        : "Recent frames"}{" "}
-                    <span>
-                      ({activeTab === "albums" && !openAlbumId ? albums.length : totalImages})
-                    </span>
-                  </h2>
-                </div>
-                <div className="section-tools">
-                  {activeTab === "library" && selectedImageIds.size > 0 && (
-                    <div className="selection-tools">
-                      <span>{selectedImageIds.size} selected</span>
-                      <select
-                        aria-label="Choose an album"
-                        value={albumTargetId}
-                        onChange={(event) => setAlbumTargetId(event.target.value)}
-                      >
-                        <option value="">Choose album</option>
-                        {albums.map((album) => (
-                          <option key={album.id} value={album.id}>
-                            {album.name}
-                          </option>
-                        ))}
-                      </select>
-                      <button
-                        className="button button-dark"
-                        onClick={() => void addSelectedToAlbum()}
-                        disabled={!albumTargetId || albumBusy}
-                      >
-                        Add to album
-                      </button>
-                    </div>
-                  )}
-                  {activeTab !== "albums" && (
-                    <div className="pagination">
-                      <button
-                        className="page-button"
-                        title="Previous page"
-                        disabled={page <= 1}
-                        onClick={() => setPage((value) => Math.max(1, value - 1))}
-                      >
-                        ←
-                      </button>
-                      <span>
-                        {page} / {totalPages}
+              <div
+                style={{
+                  display: "grid",
+                  gridTemplateColumns: "minmax(0, 1.5fr) minmax(280px, 0.8fr)",
+                  gap: 20,
+                  alignItems: "start",
+                }}
+              >
+                <div style={{ minWidth: 0 }}>
+                  <div className="section-heading">
+                    <div>
+                      <span className="eyebrow">
+                        {activeTab === "albums" ? "YOUR ALBUMS" : "YOUR COLLECTION"}
                       </span>
-                      <button
-                        className="page-button"
-                        title="Next page"
-                        disabled={page >= totalPages}
-                        onClick={() =>
-                          setPage((value) => Math.min(totalPages, value + 1))
-                        }
-                      >
-                        →
-                      </button>
+                      <h2>
+                        {activeTab === "albums"
+                          ? openAlbumId
+                            ? albums.find((album) => album.id === openAlbumId)?.name || "Album"
+                            : "Your albums"
+                          : activeTab === "favorites"
+                            ? "Favorite frames"
+                            : "Recent frames"}{" "}
+                        <span>
+                          ({activeTab === "albums" && !openAlbumId ? albums.length : totalImages})
+                        </span>
+                      </h2>
                     </div>
-                  )}
-                </div>
-              </div>
-              {activeTab === "albums" && !openAlbumId ? (
-                <div className="album-list">
-                  {albums.map((album) => (
-                    <button
-                      className="album-row"
-                      key={album.id}
-                      onClick={() => setOpenAlbumId(album.id)}
-                    >
-                      <span className="album-mark">▣</span>
-                      <strong>{album.name}</strong>
-                      <span className="album-count">{album.imageCount} photos</span>
-                      <span className="album-arrow">↗</span>
-                    </button>
-                  ))}
-                  {albums.length === 0 && (
-                    <div className="empty-state">
-                      <div className="empty-shape">▣</div>
-                      <h3>No albums yet.</h3>
-                      <p>Create an album, then select photos from your library.</p>
-                    </div>
-                  )}
-                </div>
-              ) : (
-                <>
-                  {activeTab === "albums" && (
-                    <button
-                      className="back-to-albums"
-                      onClick={() => setOpenAlbumId("")}
-                    >
-                      ← All albums
-                    </button>
-                  )}
-                  <div className={`gallery${loading ? " is-loading" : ""}`}>
-                {images.map((image) => {
-                  const transformedUrls = image.transformedUrls || [];
-                  const previewUrl = transformedUrls.at(-1) || image.url;
-                  const versionLabel =
-                    transformedUrls.length ? "latest version" : "original";
-                  return (
-                    <article className="image-card" key={image.id}>
-                      <div className="image-visual">
-                        {activeTab === "library" && (
-                          <label className="image-select" title="Select photo">
-                            <input
-                              type="checkbox"
-                              checked={selectedImageIds.has(image.id)}
-                              aria-label="Select photo"
-                              onChange={(event) =>
-                                setSelectedImageIds((current) => {
-                                  const next = new Set(current);
-                                  if (event.target.checked) next.add(image.id);
-                                  else next.delete(image.id);
-                                  return next;
-                                })
-                              }
-                            />
-                          </label>
-                        )}
-                        <button
-                          className="image-open-history"
-                          onClick={() => openHistory(image)}
-                          aria-label={`View ${versionLabel} and photo history`}
-                        >
-                          <Image
-                            className="image-preview"
-                            src={previewUrl}
-                            alt="Uploaded frame"
-                            width={800}
-                            height={640}
-                            unoptimized
-                          />
-                        </button>
-                        <button
-                          className={`favorite-button${image.isFavorite ? " favorite-active" : ""}`}
-                          onClick={() => void toggleFavorite(image)}
-                          title="Toggle favorite"
-                          aria-label="Toggle favorite"
-                        >
-                          {image.isFavorite ? "★" : "☆"}
-                        </button>
-                      </div>
-                      <div className="image-meta">
-                        <h3>
-                          {image.metadata?.format?.toUpperCase() || "IMAGE"}{" "}
-                          {versionLabel}
-                        </h3>
-                        <p>
-                          {image.metadata?.width || "—"} ×{" "}
-                          {image.metadata?.height || "—"} px ·{" "}
-                          {formatBytes(image.metadata?.size)}
-                        </p>
-                        <div
-                          className={`card-actions${transformedUrls.length ? " has-versions" : ""}`}
-                        >
-                          <button
-                            className="card-button"
-                            onClick={() => openTransform(image)}
+                    <div className="section-tools">
+                      {activeTab === "library" && selectedImageIds.size > 0 && (
+                        <div className="selection-tools">
+                          <span>{selectedImageIds.size} selected</span>
+                          <select
+                            aria-label="Choose an album"
+                            value={albumTargetId}
+                            onChange={(event) => setAlbumTargetId(event.target.value)}
                           >
-                            Transform
-                          </button>
+                            <option value="">Choose album</option>
+                            {albums.map((album) => (
+                              <option key={album.id} value={album.id}>
+                                {album.name}
+                              </option>
+                            ))}
+                          </select>
                           <button
-                            className="card-button"
-                            onClick={() => openHistory(image)}
+                            className="button button-dark"
+                            onClick={() => void addSelectedToAlbum()}
+                            disabled={!albumTargetId || albumBusy}
                           >
-                            History ({(image.transformHistory || []).length + 1})
-                          </button>
-                          <button
-                            className="card-button delete"
-                            onClick={() => void deleteImage(image)}
-                          >
-                            Delete
+                            Add to album
                           </button>
                         </div>
-                      </div>
-                    </article>
-                  );
-                })}
+                      )}
+                      {activeTab !== "albums" && (
+                        <div className="pagination">
+                          <button
+                            className="page-button"
+                            title="Previous page"
+                            disabled={page <= 1}
+                            onClick={() => setPage((value) => Math.max(1, value - 1))}
+                          >
+                            ←
+                          </button>
+                          <span>
+                            {page} / {totalPages}
+                          </span>
+                          <button
+                            className="page-button"
+                            title="Next page"
+                            disabled={page >= totalPages}
+                            onClick={() =>
+                              setPage((value) => Math.min(totalPages, value + 1))
+                            }
+                          >
+                            →
+                          </button>
+                        </div>
+                      )}
+                    </div>
                   </div>
-                  {images.length === 0 && !loading && (
-                <div className="empty-state">
-                  <div className="empty-shape">◌</div>
-                  <h3>
-                    {activeTab === "albums"
-                      ? "This album is empty."
-                      : activeTab === "favorites"
-                        ? "No favorites yet."
-                        : "Your library is waiting."}
-                  </h3>
-                  <p>
-                    {activeTab === "albums"
-                      ? "Select photos in your library and add them to this album."
-                      : activeTab === "favorites"
-                        ? "Star an image to keep it close."
-                        : "Upload your first image to start shaping the collection."}
-                  </p>
+
+                  {activeTab === "albums" && !openAlbumId ? (
+                    <div className="album-list">
+                      {albums.map((album) => (
+                        <button
+                          className="album-row"
+                          key={album.id}
+                          onClick={() => setOpenAlbumId(album.id)}
+                        >
+                          <span className="album-mark">▣</span>
+                          <strong>{album.name}</strong>
+                          <span className="album-count">{album.imageCount} photos</span>
+                          <span className="album-arrow">↗</span>
+                        </button>
+                      ))}
+                      {albums.length === 0 && (
+                        <div className="empty-state">
+                          <div className="empty-shape">▣</div>
+                          <h3>No albums yet.</h3>
+                          <p>Create an album, then select photos from your library.</p>
+                        </div>
+                      )}
+                    </div>
+                  ) : (
+                    <>
+                      {activeTab === "albums" && (
+                        <button
+                          className="back-to-albums"
+                          onClick={() => setOpenAlbumId("")}
+                        >
+                          ← All albums
+                        </button>
+                      )}
+                      <div className={`gallery${loading ? " is-loading" : ""}`}>
+                        {images.map((image) => {
+                          const transformedUrls = image.transformedUrls || [];
+                          const previewUrl = transformedUrls.at(-1) || image.url;
+                          const versionLabel =
+                            transformedUrls.length ? "latest version" : "original";
+                          return (
+                            <article className="image-card" key={image.id}>
+                              <div className="image-visual">
+                                {activeTab === "library" && (
+                                  <label className="image-select" title="Select photo">
+                                    <input
+                                      type="checkbox"
+                                      checked={selectedImageIds.has(image.id)}
+                                      aria-label="Select photo"
+                                      onChange={(event) =>
+                                        setSelectedImageIds((current) => {
+                                          const next = new Set(current);
+                                          if (event.target.checked) next.add(image.id);
+                                          else next.delete(image.id);
+                                          return next;
+                                        })
+                                      }
+                                    />
+                                  </label>
+                                )}
+                                <button
+                                  className="image-open-history"
+                                  onClick={() => openHistory(image)}
+                                  aria-label={`View ${versionLabel} and photo history`}
+                                >
+                                  <Image
+                                    className="image-preview"
+                                    src={previewUrl}
+                                    alt="Uploaded frame"
+                                    width={800}
+                                    height={640}
+                                    unoptimized
+                                  />
+                                </button>
+                                <button
+                                  className={`favorite-button${image.isFavorite ? " favorite-active" : ""}`}
+                                  onClick={() => void toggleFavorite(image)}
+                                  title="Toggle favorite"
+                                  aria-label="Toggle favorite"
+                                >
+                                  {image.isFavorite ? "★" : "☆"}
+                                </button>
+                              </div>
+                              <div className="image-meta">
+                                <h3>
+                                  {image.metadata?.format?.toUpperCase() || "IMAGE"}{" "}
+                                  {versionLabel}
+                                </h3>
+                                <p>
+                                  {image.metadata?.width || "—"} ×{" "}
+                                  {image.metadata?.height || "—"} px ·{" "}
+                                  {formatBytes(image.metadata?.size)}
+                                </p>
+                                <div
+                                  className={`card-actions${transformedUrls.length ? " has-versions" : ""}`}
+                                >
+                                  <button
+                                    className="card-button"
+                                    onClick={() => openTransform(image)}
+                                  >
+                                    Transform
+                                  </button>
+                                  <button
+                                    className="card-button"
+                                    onClick={() => openHistory(image)}
+                                  >
+                                    History ({(image.transformHistory || []).length + 1})
+                                  </button>
+                                  <button
+                                    className="card-button delete"
+                                    onClick={() => void deleteImage(image)}
+                                  >
+                                    Delete
+                                  </button>
+                                </div>
+                              </div>
+                            </article>
+                          );
+                        })}
+                      </div>
+                      {images.length === 0 && !loading && (
+                        <div className="empty-state">
+                          <div className="empty-shape">◌</div>
+                          <h3>
+                            {activeTab === "albums"
+                              ? "This album is empty."
+                              : activeTab === "favorites"
+                                ? "No favorites yet."
+                                : "Your library is waiting."}
+                          </h3>
+                          <p>
+                            {activeTab === "albums"
+                              ? "Select photos in your library and add them to this album."
+                              : activeTab === "favorites"
+                                ? "Star an image to keep it close."
+                                : "Upload your first image to start shaping the collection."}
+                          </p>
+                        </div>
+                      )}
+                    </>
+                  )}
                 </div>
-              )}
-                </>
-              )}
+
+                <aside
+                  style={{
+                    background: "rgba(16,24,40,0.68)",
+                    border: "1px solid rgba(255,255,255,0.08)",
+                    borderRadius: 18,
+                    padding: 16,
+                    minHeight: 280,
+                    boxShadow: "0 16px 40px rgba(0,0,0,0.2)",
+                  }}
+                >
+                  <div
+                    style={{
+                      display: "flex",
+                      justifyContent: "space-between",
+                      alignItems: "center",
+                      gap: 12,
+                      marginBottom: 12,
+                    }}
+                  >
+                    <div>
+                      <span className="eyebrow" style={{ color: "#d0d8ff" }}>MESSAGES</span>
+                      <h3 style={{ margin: "6px 0 0", fontSize: 22 }}>Chat</h3>
+                    </div>
+                    <span
+                      style={{
+                        background: "rgba(255,255,255,0.08)",
+                        borderRadius: 999,
+                        padding: "6px 10px",
+                        fontSize: 12,
+                      }}
+                    >
+                      live
+                    </span>
+                  </div>
+
+                  <div
+                    style={{
+                      display: "flex",
+                      flexDirection: "column",
+                      gap: 12,
+                      maxHeight: 320,
+                      overflowY: "auto",
+                      marginBottom: 12,
+                    }}
+                  >
+                    {chatMessages.map((message) => (
+                      <div
+                        key={message.id}
+                        style={{
+                          alignSelf: message.sender === "me" ? "flex-end" : "flex-start",
+                          maxWidth: "82%",
+                          background: message.sender === "me" ? "#e86b5d" : "rgba(255,255,255,0.08)",
+                          color: "#fff",
+                          borderRadius: 12,
+                          padding: "10px 12px",
+                        }}
+                      >
+                        {message.text && <div style={{ lineHeight: 1.4 }}>{message.text}</div>}
+                        {message.imageUrl && (
+                          <Image
+                            src={message.imageUrl}
+                            alt="Shared photo"
+                            width={220}
+                            height={180}
+                            unoptimized
+                            style={{ borderRadius: 10, marginTop: 8, objectFit: "cover" }}
+                          />
+                        )}
+                      </div>
+                    ))}
+                  </div>
+
+                  <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
+                    <select
+                      value={chatImageId}
+                      onChange={(event) => setChatImageId(event.target.value)}
+                      style={{
+                        background: "rgba(255,255,255,0.05)",
+                        color: "#fff",
+                        border: "1px solid rgba(255,255,255,0.08)",
+                        borderRadius: 10,
+                        padding: "10px 12px",
+                      }}
+                    >
+                      <option value="">Attach a photo</option>
+                      {images.map((image) => (
+                        <option key={image.id} value={image.id}>
+                          {image.metadata?.format || "Image"}
+                        </option>
+                      ))}
+                    </select>
+                    <textarea
+                      value={chatInput}
+                      onChange={(event) => setChatInput(event.target.value)}
+                      placeholder="Type a message..."
+                      rows={3}
+                      style={{
+                        resize: "vertical",
+                        background: "rgba(255,255,255,0.05)",
+                        color: "#fff",
+                        border: "1px solid rgba(255,255,255,0.08)",
+                        borderRadius: 10,
+                        padding: 12,
+                      }}
+                    />
+                    <button
+                      className="button button-dark"
+                      type="button"
+                      onClick={sendChatMessage}
+                      disabled={!chatInput.trim() && !chatImageId}
+                    >
+                      Send message
+                    </button>
+                  </div>
+                </aside>
+              </div>
             </section>
           </section>
         </main>
