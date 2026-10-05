@@ -1705,7 +1705,7 @@ export default function Home() {
                             event.nativeEvent.keyCode !== 229
                           ) {
                             event.preventDefault();
-                            event.currentTarget.form?.requestSubmit();
+                            void sendChatMessage();
                           }
                         }}
                         placeholder={chatReceiverId ? "Write a message… (Enter to send, Shift+Enter for new line)" : "Open a conversation to start messaging"}
