@@ -610,7 +610,7 @@ export default function Home() {
     const controller = new AbortController();
     setCompressionPreviewStatus("loading");
     const timeout = window.setTimeout(() => {
-      void fetch(`/images/${imageId}/compression-preview`, {
+      void fetch(`${API_URL}/images/${imageId}/compression-preview`, {
         method: "POST",
         headers: {
           Authorization: `Bearer ${token}`,
