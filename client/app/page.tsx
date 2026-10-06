@@ -768,19 +768,22 @@ export default function Home() {
     if (files.length === 0) return;
 
     setUploadBusy(true);
-    let uploadedCount = 0;
-    let firstError = "";
     try {
-      for (const file of files) {
-        const form = new FormData();
-        form.append("file", file);
-        try {
+      const uploadResults = await Promise.allSettled(
+        files.map(async (file) => {
+          const form = new FormData();
+          form.append("file", file);
           await apiRequest("/images", token, { method: "POST", body: form });
-          uploadedCount += 1;
-        } catch (error) {
-          firstError ||= error instanceof Error ? error.message : "Upload failed.";
-        }
-      }
+          return file.name;
+        }),
+      );
+
+      const uploadedCount = uploadResults.filter((result) => result.status === "fulfilled").length;
+      const firstError = uploadResults.find((result) => result.status === "rejected")
+        ? (uploadResults.find((result) => result.status === "rejected") as PromiseRejectedResult).reason instanceof Error
+          ? (uploadResults.find((result) => result.status === "rejected") as PromiseRejectedResult).reason.message
+          : "Upload failed."
+        : "";
 
       if (uploadedCount > 0) {
         setActiveTab("library");
