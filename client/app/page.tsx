@@ -2243,6 +2243,9 @@ export default function Home() {
                                     width={800}
                                     height={640}
                                     unoptimized
+                                    loading="lazy"
+                                    decoding="async"
+                                    sizes="(max-width: 760px) 100vw, (max-width: 1200px) 50vw, 25vw"
                                   />
                                 </button>
                                 <button
