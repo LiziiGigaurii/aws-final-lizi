@@ -1811,14 +1811,16 @@ export default function Home() {
                                 </div>
                               )}
                               {message.createdAt && (
-                                <time className="chat-message-time">{formatChatTime(message.createdAt)}</time>
-                              )}
-                              {message.id === lastOutgoingMessageId && (
-                                <span className="chat-read-receipt">
-                                  {message.isRead && message.readAt
-                                    ? `Seen ${formatChatTime(message.readAt)}`
-                                    : "Sent"}
-                                </span>
+                                <div className="chat-message-meta">
+                                  <time className="chat-message-time">{formatChatTime(message.createdAt)}</time>
+                                  {message.id === lastOutgoingMessageId && (
+                                    <span className="chat-read-receipt">
+                                      {message.isRead && message.readAt
+                                        ? `Seen ${formatChatTime(message.readAt)}`
+                                        : "Sent"}
+                                    </span>
+                                  )}
+                                </div>
                               )}
                             </div>
                           </div>
