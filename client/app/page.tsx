@@ -37,6 +37,7 @@ type TransformHistoryEntry = {
   id: string;
   version: number;
   url: string;
+  downloadUrl?: string;
   createdAt: string | null;
   sourceVersionId?: string;
   settings: TransformSettings | null;
@@ -46,6 +47,7 @@ type TransformHistoryEntry = {
 type LibraryImage = {
   id: string;
   url: string;
+  downloadUrl?: string;
   transformedUrls?: string[];
   transformHistory?: TransformHistoryEntry[];
   isFavorite?: boolean;
@@ -1240,43 +1242,21 @@ export default function Home() {
       : activeHistoryVersion?.metadata ?? historyImage?.metadata;
 
   const downloadHistoryVersion = () => {
-    if (!historyImage || !activeHistoryUrl) return;
-
-    const versionLabel =
+    const href =
       activeHistoryVersionId === "original"
-        ? "original"
-        : `version-${activeHistoryVersion?.version ?? "download"}`;
-    const format =
-      activeHistoryMetadata?.format || activeHistoryVersion?.metadata?.format || "jpg";
-    const extension = format === "jpeg" ? "jpg" : format || "jpg";
-    const filename = `${versionLabel}.${extension}`;
+        ? historyImage?.downloadUrl
+        : activeHistoryVersion?.downloadUrl ?? historyImage?.downloadUrl;
+    if (!href) return;
 
-    try {
-      const downloadUrl = new URL(activeHistoryUrl);
-      downloadUrl.searchParams.set(
-        "response-content-disposition",
-        `attachment; filename="${filename}"`,
-      );
-
-      const link = document.createElement("a");
-      link.href = downloadUrl.toString();
-      link.download = filename;
-      link.rel = "noopener noreferrer";
-      link.style.display = "none";
-      document.body.appendChild(link);
-      link.click();
-      link.remove();
-    } catch {
-      const fallbackLink = document.createElement("a");
-      fallbackLink.href = activeHistoryUrl;
-      fallbackLink.download = filename;
-      fallbackLink.target = "_self";
-      fallbackLink.rel = "noopener noreferrer";
-      fallbackLink.style.display = "none";
-      document.body.appendChild(fallbackLink);
-      fallbackLink.click();
-      fallbackLink.remove();
-    }
+    // The server signs this URL with Content-Disposition: attachment,
+    // so navigating to it downloads the file without leaving the page.
+    const link = document.createElement("a");
+    link.href = href;
+    link.rel = "noopener noreferrer";
+    link.style.display = "none";
+    document.body.appendChild(link);
+    link.click();
+    link.remove();
   };
 
   const attachChatPhoto = async (event: ChangeEvent<HTMLInputElement>) => {

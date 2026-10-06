@@ -112,6 +112,11 @@ export class AlbumsService {
       id: image._id,
       isFavorite: image.isFavorite,
       url: await this.storageService.getSignedUrl(image.originalKey),
+      downloadUrl: await this.storageService.getSignedUrl(
+        image.originalKey,
+        3600,
+        `original${/\.[a-z0-9]+$/i.exec(image.originalKey)?.[0].toLowerCase() ?? ''}`,
+      ),
       transformedUrls: await Promise.all(
         image.transformedKeys.map((key) => this.storageService.getSignedUrl(key)),
       ),

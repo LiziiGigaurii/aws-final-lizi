@@ -78,10 +78,17 @@ export class StorageService {
     return Buffer.from(bytes);
   }
 
-  async getSignedUrl(key: string, expiresInSeconds = 3600): Promise<string> {
+  async getSignedUrl(
+    key: string,
+    expiresInSeconds = 3600,
+    downloadFilename?: string,
+  ): Promise<string> {
     const command = new GetObjectCommand({
       Bucket: this.bucketName,
       Key: key,
+      ...(downloadFilename && {
+        ResponseContentDisposition: `attachment; filename="${downloadFilename}"`,
+      }),
     });
 
     return getSignedUrl(this.s3Client, command, {

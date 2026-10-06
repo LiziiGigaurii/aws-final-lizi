@@ -453,10 +453,16 @@ export class ImagesService {
 		const transformHistory = await Promise.all(
 			image.transformedKeys.map(async (key, index) => {
 				const version = historyByKey.get(key);
+				const versionNumber = version?.version ?? index + 1;
 				return {
 					id: version?.id ?? `legacy-${index + 1}`,
-					version: version?.version ?? index + 1,
+					version: versionNumber,
 					url: await this.storageService.getSignedUrl(key),
+					downloadUrl: await this.storageService.getSignedUrl(
+						key,
+						3600,
+						`version-${versionNumber}${this.extensionOf(key)}`,
+					),
 					createdAt: version?.createdAt ?? null,
 					sourceVersionId: version?.sourceVersionId,
 					settings: version?.settings ?? null,
@@ -471,6 +477,11 @@ export class ImagesService {
 			owner: image.owner,
 			isFavorite: image.isFavorite,
 			url: await this.storageService.getSignedUrl(image.originalKey),
+			downloadUrl: await this.storageService.getSignedUrl(
+				image.originalKey,
+				3600,
+				`original${this.extensionOf(image.originalKey)}`,
+			),
 			transformedUrls,
 			transformHistory,
 			metadata: {
@@ -480,6 +491,11 @@ export class ImagesService {
 				height: image.height,
 			},
 		};
+	}
+
+	private extensionOf(key: string) {
+		const match = /\.[a-z0-9]+$/i.exec(key);
+		return match ? match[0].toLowerCase() : '';
 	}
 
 	private resolveSourceKey(image: ImageDocument, sourceVersionId?: string) {
