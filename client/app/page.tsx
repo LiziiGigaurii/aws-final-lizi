@@ -1742,7 +1742,6 @@ export default function Home() {
                         chatMessages.map((message) => (
                           <div className={`chat-message-row ${message.sender}`} key={message.id}>
                             <div className="chat-message-bubble">
-                              {message.text && <p>{message.text}</p>}
                               {message.imageUrls && message.imageUrls.length > 0 && (
                                 <div className={`chat-shared-images${message.imageUrls.length === 1 ? " is-single" : ""}`}>
                                   {message.imageUrls.slice(0, 4).map((imageUrl, imageIndex) => {
@@ -1822,6 +1821,7 @@ export default function Home() {
                                   )}
                                 </div>
                               )}
+                              {message.text && <p>{message.text}</p>}
                             </div>
                           </div>
                         ))
