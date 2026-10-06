@@ -39,6 +39,8 @@ export class StorageService {
 
     const upload = new Upload({
       client: this.s3Client,
+      queueSize: 4,
+      partSize: 5 * 1024 * 1024,
       params: {
         Bucket: this.bucketName,
         Key: key,

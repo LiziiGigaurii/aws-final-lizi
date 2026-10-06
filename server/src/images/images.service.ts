@@ -131,6 +131,7 @@ export class ImagesService {
 				this.resolveSourceKey(imageDocument, transformations.sourceVersionId),
 			);
 			const image = sharp(inputBuffer);
+			const sourceMetadata = await image.metadata();
 
 			if (transformations.resize) {
 				image.resize(
@@ -190,9 +191,7 @@ export class ImagesService {
 			}
 
 			const outputFormat =
-				transformations.format ??
-				(await sharp(inputBuffer).metadata()).format ??
-				'jpeg';
+				transformations.format ?? sourceMetadata.format ?? 'jpeg';
 			const normalizedFormat = outputFormat === 'jpg' ? 'jpeg' : outputFormat;
 
 			if (transformations.format) {
