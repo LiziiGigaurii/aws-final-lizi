@@ -105,7 +105,7 @@ button:disabled { cursor: not-allowed; opacity: .55; }
 .card-actions .card-button:first-child:hover { background: var(--coral); color: #fff; }
 .card-actions .card-button.delete { border-color: var(--line); color: var(--muted); }
 .card-actions .card-button.delete:hover { border-color: #d59a93; background: #fff0ed; color: #9e443b; }
-.card-actions:not(.has-versions) .card-button.delete { grid-column: 1 / -1; }
+.card-actions .card-button.delete { grid-column: 1 / -1; }
 .action-modal-backdrop { z-index: 20; padding: 16px; background: rgba(24,33,30,.54); backdrop-filter: blur(5px); }
 .action-dialog { width: min(440px, 100%); padding: 30px; border: 1px solid rgba(24,33,30,.08); background: var(--paper); box-shadow: 0 24px 70px rgba(0,0,0,.24); animation: action-dialog-enter .18s ease-out; }
 .action-dialog-icon { display: grid; place-items: center; width: 42px; height: 42px; margin-bottom: 18px; background: var(--lime); color: var(--ink); font-size: 19px; }
@@ -291,7 +291,7 @@ button:disabled { cursor: not-allowed; opacity: .55; }
 @media (max-width: 600px) {
   .image-card .image-meta .card-actions { grid-template-columns: minmax(0, 1fr); }
   .image-card .image-meta .card-actions .card-button { min-height: 44px; font-size: 12px; }
-  .image-card .image-meta .card-actions:not(.has-versions) .card-button.delete { grid-column: 1; }
+  .image-card .image-meta .card-actions .card-button.delete { grid-column: 1; }
   .action-dialog { padding: 24px 20px; }
   .action-dialog-actions { flex-direction: column-reverse; }
   .action-dialog-actions .button, .action-cancel-button, .delete-confirm-button { width: 100%; }
