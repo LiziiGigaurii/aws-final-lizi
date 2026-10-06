@@ -1259,6 +1259,8 @@ export default function Home() {
       const link = document.createElement("a");
       link.href = objectUrl;
       link.download = filename;
+      link.style.display = "none";
+      link.target = "_self";
       document.body.appendChild(link);
       link.click();
       link.remove();
@@ -1267,8 +1269,9 @@ export default function Home() {
       const fallbackLink = document.createElement("a");
       fallbackLink.href = activeHistoryUrl;
       fallbackLink.download = filename;
-      fallbackLink.target = "_blank";
-      fallbackLink.rel = "noreferrer";
+      fallbackLink.target = "_self";
+      fallbackLink.rel = "noopener noreferrer";
+      fallbackLink.style.display = "none";
       document.body.appendChild(fallbackLink);
       fallbackLink.click();
       fallbackLink.remove();
