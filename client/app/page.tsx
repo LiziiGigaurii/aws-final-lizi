@@ -762,6 +762,51 @@ export default function Home() {
     }
   }
 
+  async function prepareUploadFile(file: File) {
+    if (file.size < 1.5 * 1024 * 1024 && !file.type.includes("heic") && !file.type.includes("heif")) {
+      return file;
+    }
+
+    try {
+      const bitmap = await createImageBitmap(file);
+      const maxDimension = 1800;
+      const scale = Math.min(1, maxDimension / Math.max(bitmap.width, bitmap.height));
+      const canvas = document.createElement("canvas");
+      canvas.width = Math.max(1, Math.round(bitmap.width * scale));
+      canvas.height = Math.max(1, Math.round(bitmap.height * scale));
+
+      const context = canvas.getContext("2d");
+      if (!context) {
+        bitmap.close?.();
+        return file;
+      }
+
+      context.imageSmoothingEnabled = true;
+      context.imageSmoothingQuality = "high";
+      context.drawImage(bitmap, 0, 0, canvas.width, canvas.height);
+
+      const outputType = file.type === "image/png" ? "image/png" : "image/jpeg";
+      const blob = await new Promise<Blob>((resolve, reject) => {
+        canvas.toBlob(
+          (result) => {
+            if (result) resolve(result);
+            else reject(new Error("Image processing failed."));
+          },
+          outputType,
+          outputType === "image/png" ? 0.92 : 0.82,
+        );
+      });
+
+      bitmap.close?.();
+      return new File([blob], file.name.replace(/\.[^.]+$/, outputType === "image/png" ? ".png" : ".jpg"), {
+        type: outputType,
+        lastModified: Date.now(),
+      });
+    } catch {
+      return file;
+    }
+  }
+
   async function handleUpload(event: ChangeEvent<HTMLInputElement>) {
     const input = event.currentTarget;
     const files = Array.from(input.files ?? []);
@@ -771,17 +816,19 @@ export default function Home() {
     try {
       const uploadResults = await Promise.allSettled(
         files.map(async (file) => {
+          const preparedFile = await prepareUploadFile(file);
           const form = new FormData();
-          form.append("file", file);
+          form.append("file", preparedFile);
           await apiRequest("/images", token, { method: "POST", body: form });
           return file.name;
         }),
       );
 
       const uploadedCount = uploadResults.filter((result) => result.status === "fulfilled").length;
-      const firstError = uploadResults.find((result) => result.status === "rejected")
-        ? (uploadResults.find((result) => result.status === "rejected") as PromiseRejectedResult).reason instanceof Error
-          ? (uploadResults.find((result) => result.status === "rejected") as PromiseRejectedResult).reason.message
+      const rejected = uploadResults.find((result) => result.status === "rejected");
+      const firstError = rejected && rejected.status === "rejected"
+        ? rejected.reason instanceof Error
+          ? rejected.reason.message
           : "Upload failed."
         : "";
 
