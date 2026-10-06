@@ -1239,6 +1239,42 @@ export default function Home() {
       ? historyImage?.metadata
       : activeHistoryVersion?.metadata ?? historyImage?.metadata;
 
+  const downloadHistoryVersion = async () => {
+    if (!historyImage || !activeHistoryUrl) return;
+
+    const versionLabel =
+      activeHistoryVersionId === "original"
+        ? "original"
+        : `version-${activeHistoryVersion?.version ?? "download"}`;
+    const format =
+      activeHistoryMetadata?.format || activeHistoryVersion?.metadata?.format || "jpg";
+    const extension = format === "jpeg" ? "jpg" : format || "jpg";
+    const filename = `${versionLabel}.${extension}`;
+
+    try {
+      const response = await fetch(activeHistoryUrl, { credentials: "omit" });
+      if (!response.ok) throw new Error("Failed to fetch image");
+      const blob = await response.blob();
+      const objectUrl = URL.createObjectURL(blob);
+      const link = document.createElement("a");
+      link.href = objectUrl;
+      link.download = filename;
+      document.body.appendChild(link);
+      link.click();
+      link.remove();
+      window.setTimeout(() => URL.revokeObjectURL(objectUrl), 2000);
+    } catch {
+      const fallbackLink = document.createElement("a");
+      fallbackLink.href = activeHistoryUrl;
+      fallbackLink.download = filename;
+      fallbackLink.target = "_blank";
+      fallbackLink.rel = "noreferrer";
+      document.body.appendChild(fallbackLink);
+      fallbackLink.click();
+      fallbackLink.remove();
+    }
+  };
+
   const attachChatPhoto = async (event: ChangeEvent<HTMLInputElement>) => {
     const files = Array.from(event.target.files || []);
     event.target.value = "";
@@ -2983,9 +3019,18 @@ export default function Home() {
                     {activeHistoryMetadata?.width || "—"} × {activeHistoryMetadata?.height || "—"} px
                     <small>{formatBytes(activeHistoryMetadata?.size)}</small>
                   </span>
-                  <a href={activeHistoryUrl || historyImage.url} target="_blank" rel="noreferrer">
-                    Open full size ↗
-                  </a>
+                  <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
+                    <a href={activeHistoryUrl || historyImage.url} target="_blank" rel="noreferrer">
+                      Open full size ↗
+                    </a>
+                    <button
+                      type="button"
+                      className="button button-dark"
+                      onClick={() => void downloadHistoryVersion()}
+                    >
+                      Download this version
+                    </button>
+                  </div>
                 </div>
                 <section className="history-settings">
                   <div className="history-section-heading">
