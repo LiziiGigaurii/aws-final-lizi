@@ -1239,7 +1239,7 @@ export default function Home() {
       ? historyImage?.metadata
       : activeHistoryVersion?.metadata ?? historyImage?.metadata;
 
-  const downloadHistoryVersion = async () => {
+  const downloadHistoryVersion = () => {
     if (!historyImage || !activeHistoryUrl) return;
 
     const versionLabel =
@@ -1252,19 +1252,20 @@ export default function Home() {
     const filename = `${versionLabel}.${extension}`;
 
     try {
-      const response = await fetch(activeHistoryUrl, { credentials: "omit" });
-      if (!response.ok) throw new Error("Failed to fetch image");
-      const blob = await response.blob();
-      const objectUrl = URL.createObjectURL(blob);
+      const downloadUrl = new URL(activeHistoryUrl);
+      downloadUrl.searchParams.set(
+        "response-content-disposition",
+        `attachment; filename="${filename}"`,
+      );
+
       const link = document.createElement("a");
-      link.href = objectUrl;
+      link.href = downloadUrl.toString();
       link.download = filename;
+      link.rel = "noopener noreferrer";
       link.style.display = "none";
-      link.target = "_self";
       document.body.appendChild(link);
       link.click();
       link.remove();
-      window.setTimeout(() => URL.revokeObjectURL(objectUrl), 2000);
     } catch {
       const fallbackLink = document.createElement("a");
       fallbackLink.href = activeHistoryUrl;
@@ -3029,7 +3030,7 @@ export default function Home() {
                     <button
                       type="button"
                       className="button button-dark"
-                      onClick={() => void downloadHistoryVersion()}
+                      onClick={downloadHistoryVersion}
                     >
                       Download this version
                     </button>
