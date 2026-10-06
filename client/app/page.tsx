@@ -306,9 +306,13 @@ export default function Home() {
   const [registerMode, setRegisterMode] = useState(false);
   const [authError, setAuthError] = useState("");
   const [authBusy, setAuthBusy] = useState(false);
-  const [activeTab, setActiveTab] = useState<"library" | "favorites" | "albums" | "chat">(
-    "library",
-  );
+  const [activeTab, setActiveTab] = useState<"library" | "favorites" | "albums" | "chat">(() => {
+    if (typeof window === "undefined") return "library";
+    const savedTab = localStorage.getItem("framehouse_active_tab");
+    return savedTab === "library" || savedTab === "favorites" || savedTab === "albums" || savedTab === "chat"
+      ? savedTab
+      : "library";
+  });
   const [page, setPage] = useState(1);
   const [totalPages, setTotalPages] = useState(1);
   const [totalImages, setTotalImages] = useState(0);
@@ -404,6 +408,12 @@ export default function Home() {
     setCurrentUserId(savedUserId || decodeUserIdFromToken(savedToken));
     setReady(true);
   }, []);
+
+  useEffect(() => {
+    if (ready) {
+      localStorage.setItem("framehouse_active_tab", activeTab);
+    }
+  }, [activeTab, ready]);
 
   useEffect(() => {
     if (!ready || !token) {
