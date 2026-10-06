@@ -753,25 +753,42 @@ export default function Home() {
   }
 
   async function handleUpload(event: ChangeEvent<HTMLInputElement>) {
-    const file = event.target.files?.[0];
-    if (!file) return;
-    const form = new FormData();
-    form.append("file", file);
+    const input = event.currentTarget;
+    const files = Array.from(input.files ?? []);
+    if (files.length === 0) return;
+
     setUploadBusy(true);
+    let uploadedCount = 0;
+    let firstError = "";
     try {
-      await apiRequest("/images", token, { method: "POST", body: form });
-      showToast("Image added to your library.");
-      setActiveTab("library");
-      setPage(1);
-      setRefreshKey((value) => value + 1);
-    } catch (error) {
-      showToast(
-        error instanceof Error ? error.message : "Unable to upload image.",
-        true,
-      );
+      for (const file of files) {
+        const form = new FormData();
+        form.append("file", file);
+        try {
+          await apiRequest("/images", token, { method: "POST", body: form });
+          uploadedCount += 1;
+        } catch (error) {
+          firstError ||= error instanceof Error ? error.message : "Upload failed.";
+        }
+      }
+
+      if (uploadedCount > 0) {
+        setActiveTab("library");
+        setPage(1);
+        setRefreshKey((value) => value + 1);
+      }
+
+      if (uploadedCount === files.length) {
+        showToast(`${uploadedCount} photo${uploadedCount === 1 ? "" : "s"} added to your library.`);
+      } else {
+        showToast(
+          `${uploadedCount} of ${files.length} photos uploaded. ${firstError}`,
+          true,
+        );
+      }
     } finally {
       setUploadBusy(false);
-      event.target.value = "";
+      input.value = "";
     }
   }
 
@@ -2004,7 +2021,7 @@ export default function Home() {
                 <button className="button button-dark" onClick={() => fileInput.current?.click()} disabled={uploadBusy}>
                   {uploadBusy ? "Uploading…" : "Choose image"} <span>↗</span>
                 </button>
-                <input ref={fileInput} type="file" accept="image/*" hidden onChange={handleUpload} />
+                <input ref={fileInput} type="file" accept="image/*" multiple hidden onChange={handleUpload} />
               </div>
               <div className="upload-visual">
                 <div className="visual-frame">
