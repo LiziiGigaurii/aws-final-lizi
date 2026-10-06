@@ -94,7 +94,19 @@ type ChatApiMessage = {
   isRead?: boolean;
   readAt?: string;
   unreadCount?: number;
+  reactions?: { user: ChatUserRef; emoji: string }[];
 };
+
+type ChatReaction = { userId: string; emoji: string };
+
+const CHAT_REACTION_EMOJIS = ["❤️", "😂", "😮", "😢", "😡", "👍"];
+
+function mapChatReactions(reactions?: { user: ChatUserRef; emoji: string }[]): ChatReaction[] {
+  return (reactions || []).map((reaction) => ({
+    userId: chatUserId(reaction.user),
+    emoji: reaction.emoji,
+  }));
+}
 
 type ChatConversation = {
   userId: string;
@@ -142,6 +154,7 @@ function mapChatMessage(message: ChatApiMessage, currentUserId: string) {
     createdAt: message.createdAt,
     isRead: message.isRead,
     readAt: message.readAt,
+    reactions: mapChatReactions(message.reactions),
   };
 }
 
@@ -364,8 +377,9 @@ export default function Home() {
     sepia: false,
   });
   const [chatMessages, setChatMessages] = useState<
-    { id: string; sender: "me" | "them"; text?: string; imageUrl?: string; imageUrls?: string[]; createdAt?: string; isRead?: boolean; readAt?: string }[]
+    { id: string; sender: "me" | "them"; text?: string; imageUrl?: string; imageUrls?: string[]; createdAt?: string; isRead?: boolean; readAt?: string; reactions?: ChatReaction[] }[]
   >([]);
+  const [reactionPickerMessageId, setReactionPickerMessageId] = useState<string | null>(null);
   const [chatImageErrors, setChatImageErrors] = useState<Set<string>>(new Set());
   const [chatConversations, setChatConversations] = useState<ChatConversation[]>([]);
   const [selectedChatImage, setSelectedChatImage] = useState<{
@@ -523,6 +537,16 @@ export default function Home() {
     socket.on("authenticated", onAuthenticated);
     socket.on("new-message", onNewMessage);
     socket.on("messages-read", onMessagesRead);
+    const onMessageReaction = (update: { messageId?: string; reactions?: { user: ChatUserRef; emoji: string }[] }) => {
+      if (!update.messageId) return;
+      const reactions = mapChatReactions(update.reactions);
+      setChatMessages((current) =>
+        current.map((message) =>
+          message.id === update.messageId ? { ...message, reactions } : message,
+        ),
+      );
+    };
+    socket.on("message-reaction", onMessageReaction);
     socket.connect();
 
     return () => {
@@ -532,6 +556,7 @@ export default function Home() {
       socket.off("authenticated", onAuthenticated);
       socket.off("new-message", onNewMessage);
       socket.off("messages-read", onMessagesRead);
+      socket.off("message-reaction", onMessageReaction);
       socket.disconnect();
       socketRef.current = null;
     };
@@ -1297,6 +1322,25 @@ export default function Home() {
     }
   };
 
+  const reactToChatMessage = (messageId: string, emoji: string) => {
+    setReactionPickerMessageId(null);
+    const socket = socketRef.current;
+    if (!socket?.connected) return;
+    // Optimistic toggle; the server broadcast reconciles it.
+    setChatMessages((current) =>
+      current.map((message) => {
+        if (message.id !== messageId) return message;
+        const others = (message.reactions || []).filter((r) => r.userId !== currentUserId);
+        const mine = message.reactions?.find((r) => r.userId === currentUserId);
+        return {
+          ...message,
+          reactions: mine?.emoji === emoji ? others : [...others, { userId: currentUserId, emoji }],
+        };
+      }),
+    );
+    socket.emit("react-message", { messageId, emoji });
+  };
+
   const sendChatMessage = async () => {
     if (chatSending || chatUploading) return;
     const trimmed = chatInput.trim();
@@ -1820,8 +1864,11 @@ export default function Home() {
                     <div className="chat-messages" aria-live="polite">
                       {chatMessages.length ? (
                         chatMessages.map((message) => (
-                          <div className={`chat-message-row ${message.sender}`} key={message.id}>
-                            <div className="chat-message-bubble">
+                          <div className={`chat-message-row ${message.sender}${message.reactions?.length ? " has-reactions" : ""}`} key={message.id}>
+                            <div
+                              className="chat-message-bubble"
+                              onDoubleClick={() => reactToChatMessage(message.id, "❤️")}
+                            >
                               {message.imageUrls && message.imageUrls.length > 0 && (
                                 <div className={`chat-shared-images${message.imageUrls.length === 1 ? " is-single" : ""}`}>
                                   {message.imageUrls.slice(0, 4).map((imageUrl, imageIndex) => {
@@ -1897,6 +1944,49 @@ export default function Home() {
                                       ? `Seen ${formatChatTime(message.readAt)}`
                                       : "Sent"}
                                   </span>
+                                </div>
+                              )}
+                              {message.reactions && message.reactions.length > 0 && (
+                                <button
+                                  type="button"
+                                  className="chat-reactions"
+                                  aria-label="Reactions"
+                                  onClick={() => {
+                                    const mine = message.reactions!.find((r) => r.userId === currentUserId);
+                                    if (mine) reactToChatMessage(message.id, mine.emoji);
+                                  }}
+                                >
+                                  {Array.from(new Set(message.reactions.map((r) => r.emoji))).join("")}
+                                  {message.reactions.length > 1 && <span>{message.reactions.length}</span>}
+                                </button>
+                              )}
+                            </div>
+                            <div className="chat-reaction-trigger-wrap">
+                              <button
+                                type="button"
+                                className="chat-reaction-trigger"
+                                aria-label="React to message"
+                                onClick={() =>
+                                  setReactionPickerMessageId((current) =>
+                                    current === message.id ? null : message.id,
+                                  )
+                                }
+                              >
+                                ☺
+                              </button>
+                              {reactionPickerMessageId === message.id && (
+                                <div className="chat-reaction-picker" role="menu">
+                                  {CHAT_REACTION_EMOJIS.map((emoji) => (
+                                    <button
+                                      type="button"
+                                      key={emoji}
+                                      role="menuitem"
+                                      className={message.reactions?.some((r) => r.userId === currentUserId && r.emoji === emoji) ? "is-selected" : ""}
+                                      onClick={() => reactToChatMessage(message.id, emoji)}
+                                    >
+                                      {emoji}
+                                    </button>
+                                  ))}
                                 </div>
                               )}
                             </div>

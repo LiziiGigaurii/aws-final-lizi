@@ -329,6 +329,43 @@ export class ChatService {
       : undefined;
   }
 
+  async toggleReaction(messageId: string, userId: string, emoji: string) {
+    if (!Types.ObjectId.isValid(messageId) || !Types.ObjectId.isValid(userId)) {
+      throw new BadRequestException('Message or user ID is invalid');
+    }
+    if (typeof emoji !== 'string' || !emoji || emoji.length > 16) {
+      throw new BadRequestException('Reaction is invalid');
+    }
+
+    const message = await this.messageModel.findById(messageId);
+    if (
+      !message ||
+      (String(message.sender) !== userId && String(message.receiver) !== userId)
+    ) {
+      throw new NotFoundException('Message not found');
+    }
+
+    // One reaction per user, Instagram-style: same emoji removes it, another replaces it.
+    const existing = message.reactions.find((r) => String(r.user) === userId);
+    message.reactions = message.reactions.filter(
+      (r) => String(r.user) !== userId,
+    );
+    if (!existing || existing.emoji !== emoji) {
+      message.reactions.push({ user: new Types.ObjectId(userId), emoji });
+    }
+    await message.save();
+
+    return {
+      messageId,
+      senderId: String(message.sender),
+      receiverId: String(message.receiver),
+      reactions: message.reactions.map((r) => ({
+        user: String(r.user),
+        emoji: r.emoji,
+      })),
+    };
+  }
+
   async markConversationAsRead(currentUserId: string, otherUserId: string) {
     if (!Types.ObjectId.isValid(currentUserId)) {
       throw new BadRequestException('Current user ID is invalid');

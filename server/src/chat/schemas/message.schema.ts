@@ -33,6 +33,17 @@ export class Message {
   })
   images: { imageId: Types.ObjectId; imageVersionId: string | null }[];
 
+  @Prop({
+    type: [
+      {
+        user: { type: Types.ObjectId, ref: User.name, required: true },
+        emoji: { type: String, required: true },
+      },
+    ],
+    default: [],
+  })
+  reactions: { user: Types.ObjectId; emoji: string }[];
+
   @Prop({ default: false })
   isRead: boolean;
 

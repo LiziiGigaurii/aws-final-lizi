@@ -120,4 +120,32 @@ export class ChatGateway {
       };
     }
   }
+
+  @SubscribeMessage('react-message')
+  async handleReactMessage(
+    @ConnectedSocket() client: Socket,
+    @MessageBody() payload: { messageId: string; emoji: string },
+  ) {
+    const userId = client.data.userId as string | undefined;
+    if (!userId) {
+      return { status: 'error', message: 'Not authenticated' };
+    }
+
+    try {
+      const result = await this.chatService.toggleReaction(
+        payload?.messageId,
+        userId,
+        payload?.emoji,
+      );
+      const update = { messageId: result.messageId, reactions: result.reactions };
+      this.server.to(`user:${result.senderId}`).emit('message-reaction', update);
+      this.server.to(`user:${result.receiverId}`).emit('message-reaction', update);
+      return { status: 'success', ...update };
+    } catch (error) {
+      return {
+        status: 'error',
+        message: error instanceof Error ? error.message : 'Reaction failed',
+      };
+    }
+  }
 }
